@@ -6,60 +6,78 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const PORT = 3000;
-
+// ⚠️ IMPORTANTE para Render
+const PORT = process.env.PORT || 3000;
 
 // 🔹 LISTAR
 app.get("/transactions", (req, res) => {
-  db.all("SELECT * FROM transactions ORDER BY date DESC", [], (err, rows) => {
-    if (err) return res.status(500).json(err);
-    res.json(rows);
-  });
-});
+  try {
+    const rows = db
+      .prepare("SELECT * FROM transactions ORDER BY date DESC")
+      .all();
 
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json(err);
+  }
+});
 
 // 🔹 CRIAR
 app.post("/transactions", (req, res) => {
-  const { description, amount, category, type, date, notes } = req.body;
+  try {
+    const { description, amount, category, type, date, notes } = req.body;
 
-  db.run(
-    `INSERT INTO transactions (description, amount, category, type, date, notes)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [description, amount, category, type, date, notes],
-    function (err) {
-      if (err) return res.status(500).json(err);
-      res.json({ id: this.lastID });
-    }
-  );
+    const result = db
+      .prepare(
+        `
+        INSERT INTO transactions (description, amount, category, type, date, notes)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `,
+      )
+      .run(description, amount, category, type, date, notes);
+
+    res.json({ id: result.lastInsertRowid });
+  } catch (err) {
+    res.status(500).json(err);
+  }
 });
-
 
 // 🔹 ATUALIZAR
 app.put("/transactions/:id", (req, res) => {
-  const { id } = req.params;
-  const { description, amount, category, type, date, notes } = req.body;
+  try {
+    const { id } = req.params;
+    const { description, amount, category, type, date, notes } = req.body;
 
-  db.run(
-    `UPDATE transactions SET description=?, amount=?, category=?, type=?, date=?, notes=? WHERE id=?`,
-    [description, amount, category, type, date, notes, id],
-    function (err) {
-      if (err) return res.status(500).json(err);
-      res.json({ updated: this.changes });
-    }
-  );
+    const result = db
+      .prepare(
+        `
+        UPDATE transactions
+        SET description=?, amount=?, category=?, type=?, date=?, notes=?
+        WHERE id=?
+      `,
+      )
+      .run(description, amount, category, type, date, notes, id);
+
+    res.json({ updated: result.changes });
+  } catch (err) {
+    res.status(500).json(err);
+  }
 });
-
 
 // 🔹 DELETE
 app.delete("/transactions/:id", (req, res) => {
-  const { id } = req.params;
+  try {
+    const { id } = req.params;
 
-  db.run(`DELETE FROM transactions WHERE id=?`, id, function (err) {
-    if (err) return res.status(500).json(err);
-    res.json({ deleted: this.changes });
-  });
+    const result = db.prepare(`DELETE FROM transactions WHERE id=?`).run(id);
+
+    res.json({ deleted: result.changes });
+  } catch (err) {
+    res.status(500).json(err);
+  }
 });
 
+// 🔥 START SERVER
 app.listen(PORT, () => {
-  console.log("🚀 Backend rodando em http://localhost:3000");
+  console.log(`🚀 Backend rodando na porta ${PORT}`);
 });
