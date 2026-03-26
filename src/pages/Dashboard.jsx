@@ -1,10 +1,15 @@
 import React, { useState, useMemo } from "react";
+// Importamos o cliente de API genérico que você deve ter/criar
+import { api } from "@/api/apiClient";
 import { useQuery } from "@tanstack/react-query";
-import StatsCards from "@/components/dashboard/StatsCards";
-import CategoryPieChart from "@/components/dashboard/CategoryPieChart";
-import MonthlyBarChart from "@/components/dashboard/MonthlyBarChart";
-import RecentTransactions from "@/components/dashboard/RecentTransactions";
-import MonthSelector from "@/components/dashboard/MonthSelector";
+
+// ATENÇÃO: Corrigido para 'Dashboard' com D maiúsculo para bater com a pasta física
+import StatsCards from "@/components/Dashboard/StatsCards";
+import CategoryPieChart from "@/components/Dashboard/CategoryPieChart";
+import MonthlyBarChart from "@/components/Dashboard/MonthlyBarChart";
+import RecentTransactions from "@/components/Dashboard/RecentTransactions";
+import MonthSelector from "@/components/Dashboard/MonthSelector";
+
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function Dashboard() {
@@ -12,20 +17,18 @@ export default function Dashboard() {
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
 
-  const fetchTransactions = async () => {
-  const res = await fetch(`${import.meta.env.VITE_API_URL}/transactions`);
-  
-  if (!res.ok) {
-    throw new Error("Erro ao buscar transações");
-  }
-
-  return res.json();
-};
-
-const { data: allTransactions = [], isLoading } = useQuery({
-  queryKey: ["transactions"],
-  queryFn: fetchTransactions,
-});
+  const { data: allTransactions = [], isLoading } = useQuery({
+    queryKey: ["transactions"],
+    queryFn: async () => {
+      const response = await api.get("/transactions", {
+        params: {
+          sort: "-date",
+          limit: 500,
+        },
+      });
+      return response.data;
+    },
+  });
 
   const monthTransactions = useMemo(() => {
     return allTransactions.filter((t) => {
@@ -42,9 +45,14 @@ const { data: allTransactions = [], isLoading } = useQuery({
       .filter((t) => t.type === "despesa")
       .reduce((sum, t) => sum + t.amount, 0);
     const investimentos = monthTransactions
-      .filter((t) => t.category === "investimentos")
+      .filter((t) => t.type === "investimento")
       .reduce((sum, t) => sum + t.amount, 0);
-    return { receitas, despesas, saldo: receitas - despesas, investimentos };
+    return {
+      receitas,
+      despesas,
+      saldo: receitas - despesas - investimentos,
+      investimentos,
+    };
   }, [monthTransactions]);
 
   if (isLoading) {
@@ -68,9 +76,18 @@ const { data: allTransactions = [], isLoading } = useQuery({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-muted-foreground text-sm mt-1">Visão geral das suas finanças</p>
+          <p className="text-muted-foreground text-sm mt-1">
+            Visão geral das suas finanças
+          </p>
         </div>
-        <MonthSelector month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y); }} />
+        <MonthSelector
+          month={month}
+          year={year}
+          onChange={(m, y) => {
+            setMonth(m);
+            setYear(y);
+          }}
+        />
       </div>
 
       <StatsCards data={stats} />

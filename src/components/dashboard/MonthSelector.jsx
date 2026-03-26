@@ -2,7 +2,10 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default function MonthSelector({ month, year, onChange }) {
-  const monthLabel = new Date(year, month).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  const monthLabel = new Date(year, month).toLocaleDateString("pt-BR", {
+    month: "long",
+    year: "numeric",
+  });
 
   const prev = () => {
     const d = new Date(year, month - 1);

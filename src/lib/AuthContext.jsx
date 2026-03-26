@@ -1,48 +1,110 @@
 import React, { createContext, useState, useContext, useEffect } from "react";
+import { api } from "@/api/apiClient";
+import { appParams } from "@/lib/app-params";
+import axios from "axios"; // Usamos axios puro ou seu helper para evitar o SDK antigo
 
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isLoadingAuth, setIsLoadingAuth] = useState(false);
+  const [isLoadingAuth, setIsLoadingAuth] = useState(true);
+  const [isLoadingPublicSettings, setIsLoadingPublicSettings] = useState(true);
+  const [authError, setAuthError] = useState(null);
+  const [appPublicSettings, setAppPublicSettings] = useState(null);
 
   useEffect(() => {
-    checkAuth();
+    checkAppState();
   }, []);
 
-  // 🔹 Verifica se tem usuário salvo
-  const checkAuth = () => {
+  const checkAppState = async () => {
     try {
-      const storedUser = localStorage.getItem("user");
+      setIsLoadingPublicSettings(true);
+      setAuthError(null);
 
-      if (storedUser) {
-        setUser(JSON.parse(storedUser));
-        setIsAuthenticated(true);
+      // Criamos um cliente axios padrão para chamadas públicas
+      const response = await axios.get(
+        `${appParams.apiUrl}/public-settings/by-id/${appParams.appId}`,
+        {
+          headers: {
+            "X-App-Id": appParams.appId,
+            Authorization: appParams.token
+              ? `Bearer ${appParams.token}`
+              : undefined,
+          },
+        },
+      );
+
+      setAppPublicSettings(response.data);
+
+      if (appParams.token) {
+        await checkUserAuth();
       } else {
+        setIsLoadingAuth(false);
         setIsAuthenticated(false);
       }
-    } catch (err) {
-      console.error("Erro ao verificar auth:", err);
-      setIsAuthenticated(false);
+      setIsLoadingPublicSettings(false);
+    } catch (appError) {
+      console.error("Erro ao verificar estado do app:", appError);
+
+      const status = appError.response?.status;
+      const reason = appError.response?.data?.extra_data?.reason;
+
+      if (status === 403 && reason) {
+        setAuthError({
+          type: reason,
+          message:
+            reason === "auth_required"
+              ? "Autenticação necessária"
+              : "Usuário não registrado",
+        });
+      } else {
+        setAuthError({
+          type: "unknown",
+          message: appError.message || "Falha ao carregar configurações",
+        });
+      }
+      setIsLoadingPublicSettings(false);
+      setIsLoadingAuth(false);
     }
   };
 
-  // 🔹 Login simples (você pode integrar com backend depois)
-  const login = (userData) => {
-    localStorage.setItem("user", JSON.stringify(userData));
-    setUser(userData);
-    setIsAuthenticated(true);
+  const checkUserAuth = async () => {
+    try {
+      setIsLoadingAuth(true);
+      // Chamada genérica para pegar os dados do usuário logado
+      const response = await api.get("/auth/me");
+      setUser(response.data);
+      setIsAuthenticated(true);
+      setIsLoadingAuth(false);
+    } catch (error) {
+      console.error("Falha na autenticação:", error);
+      setIsLoadingAuth(false);
+      setIsAuthenticated(false);
+
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        setAuthError({
+          type: "auth_required",
+          message: "Sessão expirada ou necessária",
+        });
+      }
+    }
   };
 
-  // 🔹 Logout
-  const logout = () => {
-    localStorage.removeItem("user");
+  const logout = async (shouldRedirect = true) => {
     setUser(null);
     setIsAuthenticated(false);
 
-    // opcional: reload
-    window.location.reload();
+    // Limpeza de tokens localmente (supondo que seu apiClient trate isso ou use localStorage)
+    localStorage.removeItem("fin_access_token");
+
+    if (shouldRedirect) {
+      window.location.href = "/login"; // Ou sua rota de login
+    }
+  };
+
+  const navigateToLogin = () => {
+    window.location.href = "/login";
   };
 
   return (
@@ -51,8 +113,12 @@ export const AuthProvider = ({ children }) => {
         user,
         isAuthenticated,
         isLoadingAuth,
-        login,
+        isLoadingPublicSettings,
+        authError,
+        appPublicSettings,
         logout,
+        navigateToLogin,
+        checkAppState,
       }}
     >
       {children}
@@ -60,11 +126,10 @@ export const AuthProvider = ({ children }) => {
   );
 };
 
-// Hook
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error("useAuth deve ser usado dentro do AuthProvider");
+    throw new Error("useAuth deve ser usado dentro de um AuthProvider");
   }
   return context;
 };

@@ -7,7 +7,9 @@ const CustomTooltip = ({ active, payload }) => {
     return (
       <div className="bg-card border border-border rounded-xl px-4 py-2.5 shadow-lg">
         <p className="text-sm font-semibold text-foreground">{data.name}</p>
-        <p className="text-sm text-muted-foreground">{formatCurrency(data.value)}</p>
+        <p className="text-sm text-muted-foreground">
+          {formatCurrency(data.value)}
+        </p>
       </div>
     );
   }
@@ -68,9 +70,14 @@ export default function CategoryPieChart({ transactions }) {
       <div className="grid grid-cols-2 gap-2 mt-4">
         {chartData.map((item) => (
           <div key={item.name} className="flex items-center gap-2 text-sm">
-            <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
+            <div
+              className="w-3 h-3 rounded-full flex-shrink-0"
+              style={{ backgroundColor: item.color }}
+            />
             <span className="text-muted-foreground truncate">{item.name}</span>
-            <span className="ml-auto font-medium text-foreground">{formatCurrency(item.value)}</span>
+            <span className="ml-auto font-medium text-foreground">
+              {formatCurrency(item.value)}
+            </span>
           </div>
         ))}
       </div>

@@ -1,4 +1,13 @@
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+} from "recharts";
 import { formatCurrency } from "@/lib/categories";
 
 const CustomTooltip = ({ active, payload, label }) => {
@@ -23,9 +32,13 @@ export default function MonthlyBarChart({ transactions }) {
   transactions.forEach((t) => {
     const d = new Date(t.date);
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    const label = d.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" });
+    const label = d.toLocaleDateString("pt-BR", {
+      month: "short",
+      year: "2-digit",
+    });
 
-    if (!monthlyData[key]) monthlyData[key] = { name: label, receitas: 0, despesas: 0 };
+    if (!monthlyData[key])
+      monthlyData[key] = { name: label, receitas: 0, despesas: 0 };
 
     if (t.type === "receita") {
       monthlyData[key].receitas += t.amount;
@@ -56,13 +69,37 @@ export default function MonthlyBarChart({ transactions }) {
       <div className="h-64">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={chartData} barGap={4}>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(220, 13%, 91%)" vertical={false} />
-            <XAxis dataKey="name" tick={{ fontSize: 12, fill: "hsl(220, 9%, 46%)" }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fontSize: 12, fill: "hsl(220, 9%, 46%)" }} axisLine={false} tickLine={false} tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`} />
+            <CartesianGrid
+              strokeDasharray="3 3"
+              stroke="hsl(220, 13%, 91%)"
+              vertical={false}
+            />
+            <XAxis
+              dataKey="name"
+              tick={{ fontSize: 12, fill: "hsl(220, 9%, 46%)" }}
+              axisLine={false}
+              tickLine={false}
+            />
+            <YAxis
+              tick={{ fontSize: 12, fill: "hsl(220, 9%, 46%)" }}
+              axisLine={false}
+              tickLine={false}
+              tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`}
+            />
             <Tooltip content={<CustomTooltip />} />
             <Legend wrapperStyle={{ fontSize: 12 }} />
-            <Bar dataKey="receitas" name="Receitas" fill="#10b981" radius={[6, 6, 0, 0]} />
-            <Bar dataKey="despesas" name="Despesas" fill="#ef4444" radius={[6, 6, 0, 0]} />
+            <Bar
+              dataKey="receitas"
+              name="Receitas"
+              fill="#10b981"
+              radius={[6, 6, 0, 0]}
+            />
+            <Bar
+              dataKey="despesas"
+              name="Despesas"
+              fill="#ef4444"
+              radius={[6, 6, 0, 0]}
+            />
           </BarChart>
         </ResponsiveContainer>
       </div>

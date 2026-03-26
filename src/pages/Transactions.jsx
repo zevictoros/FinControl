@@ -1,14 +1,27 @@
 import React, { useState, useMemo } from "react";
+import { api } from "../api/apiClient";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Plus, Search } from "lucide-react";
-import { AnimatePresence } from "framer-motion";
-import TransactionForm from "../components/transactions/TransactionForm";
-import TransactionList from "../components/transactions/TransactionList";
-import MonthSelector from "@/components/dashboard/MonthSelector";
-import { CATEGORIES } from "@/lib/categories";
+import TransactionForm from "@/components/transactions/TransactionForm";
+import TransactionList from "@/components/transactions/TransactionList";
+
+// Corrigido para 'Dashboard' (Maiúsculo) conforme o erro anterior do Vercel
+import MonthSelector from "@/components/Dashboard/MonthSelector";
+
+import {
+  CATEGORIES,
+  EXPENSE_CATEGORIES,
+  INCOME_CATEGORIES,
+} from "@/lib/categories";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function Transactions() {
@@ -23,102 +36,61 @@ export default function Transactions() {
 
   const queryClient = useQueryClient();
 
-// 🔹 BASE URL (boa prática)
-const API_URL = import.meta.env.VITE_API_URL;
+  // Busca de transações via API padrão
+  const { data: allTransactions = [], isLoading } = useQuery({
+    queryKey: ["transactions"],
+    queryFn: async () => {
+      const response = await api.get("/transactions", {
+        params: { sort: "-date", limit: 500 },
+      });
+      return response.data;
+    },
+  });
 
+  // Mutação para criar (Bulk ou individual)
+  const createMutation = useMutation({
+    mutationFn: (records) => api.post("/transactions/bulk", records),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      setShowForm(false);
+    },
+  });
 
-// 🔹 GET
-const fetchTransactions = async () => {
-  const res = await fetch(`${API_URL}/transactions`);
+  // Mutação para atualizar
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }) => api.put(`/transactions/${id}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      setEditing(null);
+      setShowForm(false);
+    },
+  });
 
-  if (!res.ok) throw new Error("Erro ao buscar transações");
-
-  return res.json();
-};
-
-const { data: allTransactions = [], isLoading } = useQuery({
-  queryKey: ["transactions"],
-  queryFn: fetchTransactions,
-});
-
-
-// 🔹 CREATE
-const createMutation = useMutation({
-  mutationFn: async (data) => {
-    const res = await fetch(`${API_URL}/transactions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(data),
-    });
-
-    if (!res.ok) throw new Error("Erro ao criar");
-
-    return res.json();
-  },
-  onSuccess: () => {
-    queryClient.invalidateQueries({ queryKey: ["transactions"] });
-    setShowForm(false);
-  },
-});
-
-
-// 🔹 UPDATE
-const updateMutation = useMutation({
-  mutationFn: async ({ id, data }) => {
-    const res = await fetch(`${API_URL}/transactions/${id}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(data),
-    });
-
-    if (!res.ok) throw new Error("Erro ao atualizar");
-
-    return res.json();
-  },
-  onSuccess: () => {
-    queryClient.invalidateQueries({ queryKey: ["transactions"] });
-    setEditing(null);
-    setShowForm(false);
-  },
-});
-
-
-// 🔹 DELETE
-const deleteMutation = useMutation({
-  mutationFn: async (id) => {
-    const res = await fetch(`${API_URL}/transactions/${id}`, {
-      method: "DELETE",
-    });
-
-    if (!res.ok) throw new Error("Erro ao deletar");
-
-    return res.json();
-  },
-  onSuccess: () => {
-    queryClient.invalidateQueries({ queryKey: ["transactions"] });
-  },
-});
+  // Mutação para deletar
+  const deleteMutation = useMutation({
+    mutationFn: (id) => api.delete(`/transactions/${id}`),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["transactions"] }),
+  });
 
   const filtered = useMemo(() => {
     return allTransactions.filter((t) => {
       const d = new Date(t.date);
       const monthMatch = d.getMonth() === month && d.getFullYear() === year;
-      const searchMatch = !search || t.description.toLowerCase().includes(search.toLowerCase());
-      const catMatch = filterCategory === "all" || t.category === filterCategory;
+      const searchMatch =
+        !search || t.description.toLowerCase().includes(search.toLowerCase());
+      const catMatch =
+        filterCategory === "all" || t.category === filterCategory;
       const typeMatch = filterType === "all" || t.type === filterType;
       return monthMatch && searchMatch && catMatch && typeMatch;
     });
   }, [allTransactions, month, year, search, filterCategory, filterType]);
 
-  const handleSubmit = (data) => {
+  const handleSubmit = (records) => {
     if (editing) {
-      updateMutation.mutate({ id: editing.id, data });
+      updateMutation.mutate({ id: editing.id, data: records[0] });
     } else {
-      createMutation.mutate(data);
+      createMutation.mutate(records);
     }
   };
 
@@ -128,7 +100,13 @@ const deleteMutation = useMutation({
   };
 
   if (isLoading) {
-    return <div className="space-y-4">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-16 rounded-xl" />)}</div>;
+    return (
+      <div className="space-y-4">
+        {[...Array(5)].map((_, i) => (
+          <Skeleton key={i} className="h-16 rounded-xl" />
+        ))}
+      </div>
+    );
   }
 
   return (
@@ -136,26 +114,42 @@ const deleteMutation = useMutation({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Transações</h1>
-          <p className="text-muted-foreground text-sm mt-1">Gerencie suas receitas e despesas</p>
+          <p className="text-muted-foreground text-sm mt-1">
+            Gerencie suas receitas e despesas
+          </p>
         </div>
         <div className="flex items-center gap-3">
-          <MonthSelector month={month} year={year} onChange={(m, y) => { setMonth(m); setYear(y); }} />
-          <Button onClick={() => { setEditing(null); setShowForm(true); }}>
+          <MonthSelector
+            month={month}
+            year={year}
+            onChange={(m, y) => {
+              setMonth(m);
+              setYear(y);
+            }}
+          />
+          <Button
+            onClick={() => {
+              setEditing(null);
+              setShowForm(true);
+            }}
+          >
             <Plus className="w-4 h-4 mr-2" />
             Nova
           </Button>
         </div>
       </div>
 
-      <AnimatePresence>
-        {showForm && (
-          <TransactionForm
-            transaction={editing}
-            onSubmit={handleSubmit}
-            onCancel={() => { setShowForm(false); setEditing(null); }}
-          />
-        )}
-      </AnimatePresence>
+      {showForm && (
+        <TransactionForm
+          transaction={editing}
+          onSubmit={handleSubmit}
+          onCancel={() => {
+            setShowForm(false);
+            setEditing(null);
+          }}
+          isSubmitting={createMutation.isPending || updateMutation.isPending}
+        />
+      )}
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3">
@@ -174,8 +168,16 @@ const deleteMutation = useMutation({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas categorias</SelectItem>
-            {Object.entries(CATEGORIES).map(([key, val]) => (
-              <SelectItem key={key} value={key}>{val.label}</SelectItem>
+            <SelectItem value="investimentos">Investimentos</SelectItem>
+            {Object.entries(EXPENSE_CATEGORIES).map(([key, val]) => (
+              <SelectItem key={key} value={key}>
+                ↓ {val.label}
+              </SelectItem>
+            ))}
+            {Object.entries(INCOME_CATEGORIES).map(([key, val]) => (
+              <SelectItem key={key} value={key}>
+                ↑ {val.label}
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -187,6 +189,7 @@ const deleteMutation = useMutation({
             <SelectItem value="all">Todos tipos</SelectItem>
             <SelectItem value="receita">Receitas</SelectItem>
             <SelectItem value="despesa">Despesas</SelectItem>
+            <SelectItem value="investimento">Investimentos</SelectItem>
           </SelectContent>
         </Select>
       </div>

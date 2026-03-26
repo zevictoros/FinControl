@@ -1,5 +1,11 @@
 import { CATEGORIES, formatCurrency } from "@/lib/categories";
-import { ArrowDownLeft, ArrowUpRight, Pencil, Trash2 } from "lucide-react";
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  Pencil,
+  Trash2,
+  CreditCard,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -33,7 +39,10 @@ export default function TransactionList({ transactions, onEdit, onDelete }) {
             <div className="col-span-4 flex items-center gap-3">
               <div
                 className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
-                style={{ backgroundColor: (CATEGORIES[t.category]?.color || "#64748b") + "18" }}
+                style={{
+                  backgroundColor:
+                    (CATEGORIES[t.category]?.color || "#64748b") + "18",
+                }}
               >
                 {t.type === "receita" ? (
                   <ArrowUpRight className="w-4 h-4 text-emerald-500" />
@@ -42,15 +51,30 @@ export default function TransactionList({ transactions, onEdit, onDelete }) {
                 )}
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-medium truncate">{t.description}</p>
-                {t.notes && <p className="text-xs text-muted-foreground truncate">{t.notes}</p>}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-sm font-medium truncate">
+                    {t.description}
+                  </p>
+                  {t.installments_total > 1 && (
+                    <span className="flex items-center gap-1 text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">
+                      <CreditCard className="w-3 h-3" />
+                      {t.installment_number}/{t.installments_total}
+                    </span>
+                  )}
+                </div>
+                {t.notes && (
+                  <p className="text-xs text-muted-foreground truncate">
+                    {t.notes}
+                  </p>
+                )}
               </div>
             </div>
             <div className="col-span-2 hidden sm:block">
               <span
                 className="text-xs font-medium px-2.5 py-1 rounded-full"
                 style={{
-                  backgroundColor: (CATEGORIES[t.category]?.color || "#64748b") + "18",
+                  backgroundColor:
+                    (CATEGORIES[t.category]?.color || "#64748b") + "18",
                   color: CATEGORIES[t.category]?.color || "#64748b",
                 }}
               >
@@ -61,15 +85,28 @@ export default function TransactionList({ transactions, onEdit, onDelete }) {
               {new Date(t.date).toLocaleDateString("pt-BR")}
             </div>
             <div className="col-span-2 text-right">
-              <span className={`text-sm font-semibold ${t.type === "receita" ? "text-emerald-500" : "text-red-500"}`}>
-                {t.type === "receita" ? "+" : "-"}{formatCurrency(t.amount)}
+              <span
+                className={`text-sm font-semibold ${t.type === "receita" ? "text-emerald-500" : "text-red-500"}`}
+              >
+                {t.type === "receita" ? "+" : "-"}
+                {formatCurrency(t.amount)}
               </span>
             </div>
             <div className="col-span-2 flex justify-end gap-1">
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(t)}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => onEdit(t)}
+              >
                 <Pencil className="w-3.5 h-3.5" />
               </Button>
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => onDelete(t.id)}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-destructive hover:text-destructive"
+                onClick={() => onDelete(t.id)}
+              >
                 <Trash2 className="w-3.5 h-3.5" />
               </Button>
             </div>
