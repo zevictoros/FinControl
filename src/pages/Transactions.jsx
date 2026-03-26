@@ -40,16 +40,14 @@ export default function Transactions() {
   const { data: allTransactions = [], isLoading } = useQuery({
     queryKey: ["transactions"],
     queryFn: async () => {
-      const response = await api.get("/transactions", {
-        params: { sort: "-date", limit: 500 },
-      });
+      const response = await api.get("/transactions");
       return response.data;
     },
   });
 
   // Mutação para criar (Bulk ou individual)
   const createMutation = useMutation({
-    mutationFn: (records) => api.post("/transactions/bulk", records),
+    mutationFn: (records) => api.post("/transactions", records[0]),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       setShowForm(false);
