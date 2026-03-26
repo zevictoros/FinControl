@@ -14,7 +14,7 @@ export default function Dashboard() {
   const [year, setYear] = useState(now.getFullYear());
 
   const fetchTransactions = async () => {
-  const res = await fetch("http://localhost:3000/transactions");
+  const res = await fetch(`${import.meta.env.VITE_API_URL}/transactions`);
   
   if (!res.ok) {
     throw new Error("Erro ao buscar transações");

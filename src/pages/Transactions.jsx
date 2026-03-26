@@ -24,9 +24,13 @@ export default function Transactions() {
 
   const queryClient = useQueryClient();
 
-  // 🔹 GET
+// 🔹 BASE URL (boa prática)
+const API_URL = import.meta.env.VITE_API_URL;
+
+
+// 🔹 GET
 const fetchTransactions = async () => {
-  const res = await fetch("http://localhost:3000/transactions");
+  const res = await fetch(`${API_URL}/transactions`);
 
   if (!res.ok) throw new Error("Erro ao buscar transações");
 
@@ -42,7 +46,7 @@ const { data: allTransactions = [], isLoading } = useQuery({
 // 🔹 CREATE
 const createMutation = useMutation({
   mutationFn: async (data) => {
-    const res = await fetch("http://localhost:3000/transactions", {
+    const res = await fetch(`${API_URL}/transactions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -64,7 +68,7 @@ const createMutation = useMutation({
 // 🔹 UPDATE
 const updateMutation = useMutation({
   mutationFn: async ({ id, data }) => {
-    const res = await fetch(`http://localhost:3000/transactions/${id}`, {
+    const res = await fetch(`${API_URL}/transactions/${id}`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
@@ -87,7 +91,7 @@ const updateMutation = useMutation({
 // 🔹 DELETE
 const deleteMutation = useMutation({
   mutationFn: async (id) => {
-    const res = await fetch(`http://localhost:3000/transactions/${id}`, {
+    const res = await fetch(`${API_URL}/transactions/${id}`, {
       method: "DELETE",
     });
 

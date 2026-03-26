@@ -9,6 +9,10 @@ app.use(express.json());
 // ⚠️ IMPORTANTE para Render
 const PORT = process.env.PORT || 3000;
 
+app.get("/", (req, res) => {
+  res.send("🚀 API rodando com sucesso");
+});
+
 // 🔹 LISTAR
 app.get("/transactions", (req, res) => {
   try {
