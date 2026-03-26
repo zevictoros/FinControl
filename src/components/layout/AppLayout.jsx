@@ -1,6 +1,5 @@
 import { Outlet, Link, useLocation } from "react-router-dom";
 import { LayoutDashboard, Receipt, LogOut } from "lucide-react";
-import { base44 } from "@/api/base44Client";
 import { cn } from "@/lib/utils";
 
 const navItems = [
