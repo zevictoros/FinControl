@@ -1,5 +1,4 @@
 import React, { useState, useMemo } from "react";
-// Importação do seu novo cliente de API
 import { api } from "@/api/apiClient";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -45,20 +44,8 @@ const MONTHS_OPTIONS = [
 const CustomTooltip = ({ active, payload, label }) => {
   if (active && payload && payload.length) {
     return (
-      <div
-        style={{
-          backgroundColor: "hsl(var(--card))",
-          border: "1px solid hsl(var(--border))",
-          color: "hsl(var(--foreground))",
-        }}
-        className="rounded-xl px-4 py-3 shadow-lg"
-      >
-        <p
-          className="text-sm font-semibold mb-1"
-          style={{ color: "hsl(var(--foreground))" }}
-        >
-          {label}
-        </p>
+      <div className="bg-card border border-border rounded-xl px-4 py-3 shadow-lg">
+        <p className="text-sm font-semibold mb-1 text-foreground">{label}</p>
         {payload.map((p, i) => (
           <p key={i} className="text-sm" style={{ color: p.color }}>
             {p.name}: {formatCurrency(p.value)}
@@ -75,15 +62,15 @@ export default function Reports() {
   const [filterType, setFilterType] = useState("all");
   const [filterCategory, setFilterCategory] = useState("all");
 
-  // Busca transações do seu banco Neon via Render
   const { data: allTransactions = [], isLoading } = useQuery({
     queryKey: ["transactions"],
     queryFn: async () => {
       const response = await api.get("/transactions");
-      return response.data;
+      return Array.isArray(response.data) ? response.data : [];
     },
   });
 
+  // Cálculo do período de corte (cutoff)
   const cutoff = useMemo(() => {
     const d = new Date();
     d.setMonth(d.getMonth() - parseInt(months));
@@ -92,6 +79,7 @@ export default function Reports() {
     return d;
   }, [months]);
 
+  // Filtro principal com correção de fuso e valores numéricos
   const filtered = useMemo(() => {
     return allTransactions.filter((t) => {
       const d = new Date(t.date);
@@ -103,39 +91,47 @@ export default function Reports() {
     });
   }, [allTransactions, cutoff, filterType, filterCategory]);
 
-  // Processamento para Gráfico de Evolução
+  // Processamento para Gráfico de Evolução (Correção de Fuso e NaN)
   const monthlyData = useMemo(() => {
     const map = {};
     filtered.forEach((t) => {
-      const d = new Date(t.date);
-      const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+      // Extração de data via string para evitar erros de UTC
+      const [year, month] = t.date.split("T")[0].split("-");
+      const key = `${year}-${month}`;
+      const amount = Number(t.amount) || 0;
+
       if (!map[key]) {
+        const dateObj = new Date(parseInt(year), parseInt(month) - 1, 1);
         map[key] = {
-          label: new Date(
-            d.getUTCFullYear(),
-            d.getUTCMonth(),
-          ).toLocaleDateString("pt-BR", { month: "short", year: "2-digit" }),
+          label: dateObj.toLocaleDateString("pt-BR", {
+            month: "short",
+            year: "2-digit",
+          }),
           receita: 0,
           despesa: 0,
           investimento: 0,
+          sortKey: key,
         };
       }
-      if (t.type === "receita") map[key].receita += t.amount;
-      else if (t.type === "despesa") map[key].despesa += t.amount;
-      else if (t.type === "investimento") map[key].investimento += t.amount;
+      if (t.type === "receita") map[key].receita += amount;
+      else if (t.type === "despesa") map[key].despesa += amount;
+      else if (t.type === "investimento") map[key].investimento += amount;
     });
-    return Object.entries(map)
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([, v]) => v);
+
+    return Object.values(map).sort((a, b) =>
+      a.sortKey.localeCompare(b.sortKey),
+    );
   }, [filtered]);
 
-  // Processamento para Gráfico de Pizza
+  // Processamento para Gráfico de Pizza (Correção de NaN)
   const categoryData = useMemo(() => {
     const map = {};
     filtered.forEach((t) => {
       const key = t.category;
-      map[key] = (map[key] || 0) + t.amount;
+      const amount = Number(t.amount) || 0;
+      map[key] = (map[key] || 0) + amount;
     });
+
     return Object.entries(map)
       .map(([key, value]) => ({
         name: CATEGORIES[key]?.label || key,
@@ -149,13 +145,13 @@ export default function Reports() {
     () => ({
       receitas: filtered
         .filter((t) => t.type === "receita")
-        .reduce((s, t) => s + t.amount, 0),
+        .reduce((s, t) => s + (Number(t.amount) || 0), 0),
       despesas: filtered
         .filter((t) => t.type === "despesa")
-        .reduce((s, t) => s + t.amount, 0),
+        .reduce((s, t) => s + (Number(t.amount) || 0), 0),
       investimentos: filtered
         .filter((t) => t.type === "investimento")
-        .reduce((s, t) => s + t.amount, 0),
+        .reduce((s, t) => s + (Number(t.amount) || 0), 0),
     }),
     [filtered],
   );
@@ -165,9 +161,9 @@ export default function Reports() {
       <div className="space-y-4 pt-4">
         <Skeleton className="h-10 w-48" />
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <Skeleton className="h-32 rounded-2xl" />
-          <Skeleton className="h-32 rounded-2xl" />
-          <Skeleton className="h-32 rounded-2xl" />
+          {[...Array(3)].map((_, i) => (
+            <Skeleton key={i} className="h-32 rounded-2xl" />
+          ))}
         </div>
         <Skeleton className="h-[400px] rounded-2xl" />
       </div>
@@ -191,12 +187,10 @@ export default function Reports() {
         <TabsContent value="transactions" className="space-y-6 outline-none">
           {/* Filtros */}
           <div className="bg-card rounded-2xl border border-border p-5 shadow-sm">
-            <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-              Configurar Relatório
-            </h3>
+            <h3 className="text-sm font-semibold mb-4">Configurar Relatório</h3>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label className="text-xs uppercase text-muted-foreground">
+                <Label className="text-xs uppercase text-muted-foreground font-bold">
                   Período
                 </Label>
                 <Select value={months} onValueChange={setMonths}>
@@ -213,7 +207,7 @@ export default function Reports() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label className="text-xs uppercase text-muted-foreground">
+                <Label className="text-xs uppercase text-muted-foreground font-bold">
                   Tipo
                 </Label>
                 <Select
@@ -235,7 +229,7 @@ export default function Reports() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label className="text-xs uppercase text-muted-foreground">
+                <Label className="text-xs uppercase text-muted-foreground font-bold">
                   Categoria
                 </Label>
                 <Select
@@ -271,11 +265,11 @@ export default function Reports() {
             </div>
           </div>
 
-          {/* Cards de Resumo do Filtro */}
+          {/* Cards de Resumo */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-card rounded-2xl border border-border p-5 shadow-sm">
               <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest mb-1">
-                Receitas no Período
+                Receitas
               </p>
               <p className="text-xl font-bold text-emerald-500">
                 {formatCurrency(totals.receitas)}
@@ -283,7 +277,7 @@ export default function Reports() {
             </div>
             <div className="bg-card rounded-2xl border border-border p-5 shadow-sm">
               <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest mb-1">
-                Despesas no Período
+                Despesas
               </p>
               <p className="text-xl font-bold text-red-500">
                 {formatCurrency(totals.despesas)}
@@ -291,7 +285,7 @@ export default function Reports() {
             </div>
             <div className="bg-card rounded-2xl border border-border p-5 shadow-sm">
               <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest mb-1">
-                Investimentos no Período
+                Investimentos
               </p>
               <p className="text-xl font-bold text-violet-500">
                 {formatCurrency(totals.investimentos)}
@@ -299,151 +293,75 @@ export default function Reports() {
             </div>
           </div>
 
-          {/* Gráfico de Barras: Evolução Mensal */}
+          {/* Gráfico de Evolução */}
           <div className="bg-card rounded-2xl border border-border p-6 shadow-sm">
-            <h3 className="font-semibold mb-6">Evolução de Fluxo de Caixa</h3>
-            {monthlyData.length === 0 ? (
-              <div className="h-72 flex items-center justify-center text-muted-foreground text-sm border border-dashed rounded-xl">
-                Nenhum dado encontrado para os filtros selecionados.
-              </div>
-            ) : (
-              <div className="h-72">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={monthlyData} barGap={4}>
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      vertical={false}
-                      stroke="hsl(var(--border))"
+            <h3 className="font-semibold mb-6 text-sm">Evolução Mensal</h3>
+            <div className="h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={monthlyData} barGap={4}>
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    vertical={false}
+                    stroke="hsl(var(--border))"
+                  />
+                  <XAxis
+                    dataKey="label"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fontSize: 11 }}
+                  />
+                  <YAxis
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fontSize: 11 }}
+                    tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`}
+                  />
+                  <Tooltip
+                    content={<CustomTooltip />}
+                    cursor={{ fill: "hsl(var(--muted)/0.2)" }}
+                  />
+                  <Legend
+                    iconType="circle"
+                    wrapperStyle={{ paddingTop: "20px" }}
+                  />
+                  {(filterType === "all" || filterType === "receita") && (
+                    <Bar
+                      dataKey="receita"
+                      name="Receitas"
+                      fill="#10b981"
+                      radius={[4, 4, 0, 0]}
+                      barSize={20}
                     />
-                    <XAxis
-                      dataKey="label"
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fontSize: 11 }}
+                  )}
+                  {(filterType === "all" || filterType === "despesa") && (
+                    <Bar
+                      dataKey="despesa"
+                      name="Despesas"
+                      fill="#ef4444"
+                      radius={[4, 4, 0, 0]}
+                      barSize={20}
                     />
-                    <YAxis
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fontSize: 11 }}
-                      tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`}
+                  )}
+                  {(filterType === "all" || filterType === "investimento") && (
+                    <Bar
+                      dataKey="investimento"
+                      name="Investimentos"
+                      fill="#7c3aed"
+                      radius={[4, 4, 0, 0]}
+                      barSize={20}
                     />
-                    <Tooltip
-                      content={<CustomTooltip />}
-                      cursor={{ fill: "hsl(var(--muted)/0.2)" }}
-                    />
-                    <Legend
-                      iconType="circle"
-                      wrapperStyle={{ paddingTop: "20px" }}
-                    />
-                    {(filterType === "all" || filterType === "receita") && (
-                      <Bar
-                        dataKey="receita"
-                        name="Receitas"
-                        fill="#10b981"
-                        radius={[4, 4, 0, 0]}
-                        barSize={20}
-                      />
-                    )}
-                    {(filterType === "all" || filterType === "despesa") && (
-                      <Bar
-                        dataKey="despesa"
-                        name="Despesas"
-                        fill="#ef4444"
-                        radius={[4, 4, 0, 0]}
-                        barSize={20}
-                      />
-                    )}
-                    {(filterType === "all" ||
-                      filterType === "investimento") && (
-                      <Bar
-                        dataKey="investimento"
-                        name="Investimentos"
-                        fill="#7c3aed"
-                        radius={[4, 4, 0, 0]}
-                        barSize={20}
-                      />
-                    )}
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
+                  )}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
 
-          {/* Gráfico de Linha: Tendência */}
-          {monthlyData.length > 1 && (
-            <div className="bg-card rounded-2xl border border-border p-6 shadow-sm">
-              <h3 className="font-semibold mb-6">
-                Tendência de Gastos e Ganhos
-              </h3>
-              <div className="h-72">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={monthlyData}>
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      vertical={false}
-                      stroke="hsl(var(--border))"
-                    />
-                    <XAxis
-                      dataKey="label"
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fontSize: 11 }}
-                    />
-                    <YAxis
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fontSize: 11 }}
-                      tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`}
-                    />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Legend
-                      iconType="circle"
-                      wrapperStyle={{ paddingTop: "20px" }}
-                    />
-                    {(filterType === "all" || filterType === "receita") && (
-                      <Line
-                        type="monotone"
-                        dataKey="receita"
-                        name="Receitas"
-                        stroke="#10b981"
-                        strokeWidth={3}
-                        dot={{ r: 4 }}
-                        activeDot={{ r: 6 }}
-                      />
-                    )}
-                    {(filterType === "all" || filterType === "despesa") && (
-                      <Line
-                        type="monotone"
-                        dataKey="despesa"
-                        name="Despesas"
-                        stroke="#ef4444"
-                        strokeWidth={3}
-                        dot={{ r: 4 }}
-                        activeDot={{ r: 6 }}
-                      />
-                    )}
-                    {(filterType === "all" ||
-                      filterType === "investimento") && (
-                      <Line
-                        type="monotone"
-                        dataKey="investimento"
-                        name="Investimentos"
-                        stroke="#7c3aed"
-                        strokeWidth={3}
-                        dot={{ r: 4 }}
-                        activeDot={{ r: 6 }}
-                      />
-                    )}
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          )}
-
-          {/* Gráfico de Pizza: Distribuição por Categoria */}
+          {/* Gráfico de Pizza */}
           {categoryData.length > 0 && (
             <div className="bg-card rounded-2xl border border-border p-6 shadow-sm">
-              <h3 className="font-semibold mb-6">Distribuição por Categoria</h3>
+              <h3 className="font-semibold mb-6 text-sm">
+                Distribuição por Categoria
+              </h3>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
                 <div className="h-72">
                   <ResponsiveContainer width="100%" height="100%">
@@ -453,7 +371,7 @@ export default function Reports() {
                         cx="50%"
                         cy="50%"
                         innerRadius={60}
-                        outerRadius={100}
+                        outerRadius={90}
                         paddingAngle={5}
                         dataKey="value"
                         stroke="none"
@@ -470,14 +388,14 @@ export default function Reports() {
                   {categoryData.map((item) => (
                     <div
                       key={item.name}
-                      className="flex items-center justify-between p-2 rounded-lg hover:bg-muted/30 transition-colors"
+                      className="flex items-center justify-between p-2 rounded-lg hover:bg-muted/30 transition-colors border border-transparent hover:border-border"
                     >
-                      <div className="flex items-center gap-2 overflow-hidden">
+                      <div className="flex items-center gap-2">
                         <div
-                          className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                          className="w-2.5 h-2.5 rounded-full"
                           style={{ backgroundColor: item.color }}
                         />
-                        <span className="text-xs text-muted-foreground truncate">
+                        <span className="text-xs text-muted-foreground">
                           {item.name}
                         </span>
                       </div>

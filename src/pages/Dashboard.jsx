@@ -14,7 +14,7 @@ export default function Dashboard() {
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
 
-  // Busca todas as transações do banco Neon
+  // 1. Busca todas as transações (Neon/Render)
   const { data: allTransactions = [], isLoading: loadingTx } = useQuery({
     queryKey: ["transactions"],
     queryFn: async () => {
@@ -23,7 +23,7 @@ export default function Dashboard() {
     },
   });
 
-  // Busca configurações do usuário
+  // 2. Busca configurações do usuário
   const { data: settings, isLoading: loadingSettings } = useQuery({
     queryKey: ["userSettings"],
     queryFn: async () => {
@@ -38,17 +38,16 @@ export default function Dashboard() {
 
   const isLoading = loadingTx || loadingSettings;
 
-  // Filtra transações do mês selecionado (Correção de Fuso Horário)
+  // 3. Filtra transações do mês selecionado (Tratamento de String para evitar erro de Fuso Horário)
   const monthTransactions = useMemo(() => {
     return allTransactions.filter((t) => {
       if (!t.date) return false;
-      // Extrai YYYY-MM-DD com segurança sem converter fuso
       const [y, m] = t.date.split("T")[0].split("-");
       return parseInt(m) - 1 === month && parseInt(y) === year;
     });
   }, [allTransactions, month, year]);
 
-  // Lógica de Saldo Anterior (Carry Over)
+  // 4. Lógica de Saldo Anterior (Carry Over)
   const prevMonthBalance = useMemo(() => {
     if (!settings?.carry_balance) return 0;
 
@@ -70,10 +69,11 @@ export default function Dashboard() {
       calculateSum("receita") -
       calculateSum("despesa") -
       calculateSum("investimento");
+
     return balance > 0 ? balance : 0;
   }, [allTransactions, month, year, settings]);
 
-  // Cálculos de Estatísticas (Correção de NaN)
+  // 5. Cálculos de Estatísticas para os Cards (Garante que tudo seja número)
   const stats = useMemo(() => {
     const calculateSum = (type) =>
       monthTransactions
@@ -94,6 +94,7 @@ export default function Dashboard() {
     };
   }, [monthTransactions, prevMonthBalance]);
 
+  // Renderização de Loading
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -112,6 +113,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      {/* Cabeçalho */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
@@ -129,19 +131,22 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* Cards de resumo corrigidos */}
+      {/* Cards de Resumo (Receita, Despesa, Saldo, Investimentos) */}
       <StatsCards data={stats} />
 
-      {/* Gráficos de Pizza (passando transactions para processamento interno) */}
+      {/* Seção de Gráficos de Pizza - Lado a Lado no Desktop */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Gráfico de Despesas (Por Categoria) */}
         <CategoryPieChart transactions={monthTransactions} />
+
+        {/* Gráfico de Receitas (Por Categoria) */}
         <IncomePieChart transactions={monthTransactions} />
       </div>
 
-      {/* Gráfico de Barras Mensal */}
+      {/* Gráfico de Barras Mensal (Histórico do Ano) */}
       <MonthlyBarChart transactions={allTransactions} />
 
-      {/* Tabela de Transações Recentes */}
+      {/* Tabela de Transações Recentes do Mês Selecionado */}
       <RecentTransactions transactions={monthTransactions} />
     </div>
   );
