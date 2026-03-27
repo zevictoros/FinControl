@@ -1,6 +1,6 @@
 const express = require("express");
 const cors = require("cors");
-const db = require("./db"); // Importa o pool do novo db.js que te mandei
+const db = require("./db");
 
 const app = express();
 app.use(cors());
@@ -8,19 +8,23 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
+// Rota de Check-in
 app.get("/", (req, res) => {
   res.send("🚀 API FinControl rodando com sucesso no Neon.tech");
 });
 
+// --- TRANSAÇÕES ---
+
 // 🔹 LISTAR
 app.get("/transactions", async (req, res) => {
   try {
+    // Busca todas as transações (no futuro, você filtrará por user_id aqui)
     const result = await db.query(
-      "SELECT * FROM transactions ORDER BY date DESC",
+      "SELECT * FROM transactions ORDER BY date DESC, id DESC",
     );
-    res.json(result.rows); // O Postgres retorna os dados dentro da propriedade .rows
+    res.json(result.rows);
   } catch (err) {
-    console.error(err);
+    console.error("Erro ao buscar:", err);
     res.status(500).json({ error: "Erro ao buscar transações" });
   }
 });
@@ -30,17 +34,18 @@ app.post("/transactions", async (req, res) => {
   try {
     const { description, amount, category, type, date, notes } = req.body;
 
+    // O RETURNING * nos permite devolver o objeto completo criado para o Frontend
     const query = `
       INSERT INTO transactions (description, amount, category, type, date, notes)
       VALUES ($1, $2, $3, $4, $5, $6)
-      RETURNING id
+      RETURNING *
     `;
     const values = [description, amount, category, type, date, notes];
 
     const result = await db.query(query, values);
-    res.json({ id: result.rows[0].id });
+    res.status(201).json(result.rows[0]);
   } catch (err) {
-    console.error(err);
+    console.error("Erro ao criar:", err);
     res.status(500).json({ error: "Erro ao criar transação" });
   }
 });
@@ -55,13 +60,19 @@ app.put("/transactions/:id", async (req, res) => {
       UPDATE transactions
       SET description=$1, amount=$2, category=$3, type=$4, date=$5, notes=$6
       WHERE id=$7
+      RETURNING *
     `;
     const values = [description, amount, category, type, date, notes, id];
 
     const result = await db.query(query, values);
-    res.json({ updated: result.rowCount }); // rowCount indica quantas linhas foram alteradas
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Transação não encontrada" });
+    }
+
+    res.json(result.rows[0]);
   } catch (err) {
-    console.error(err);
+    console.error("Erro ao atualizar:", err);
     res.status(500).json({ error: "Erro ao atualizar transação" });
   }
 });
@@ -73,8 +84,68 @@ app.delete("/transactions/:id", async (req, res) => {
     const result = await db.query("DELETE FROM transactions WHERE id=$1", [id]);
     res.json({ deleted: result.rowCount });
   } catch (err) {
-    console.error(err);
+    console.error("Erro ao deletar:", err);
     res.status(500).json({ error: "Erro ao deletar transação" });
+  }
+});
+
+// --- CONFIGURAÇÕES (Necessário para a tela Settings e Dashboard) ---
+
+// 🔹 BUSCAR CONFIGS
+app.get("/settings", async (req, res) => {
+  try {
+    // Por enquanto, pegamos a config de um usuário fixo (ou a primeira que existir)
+    // até você implementar o sistema de Login completo
+    const result = await db.query(
+      "SELECT carry_balance FROM user_settings LIMIT 1",
+    );
+    res.json(result.rows[0] || { carry_balance: false });
+  } catch (err) {
+    res.status(500).json({ error: "Erro ao buscar configurações" });
+  }
+});
+
+// 🔹 SALVAR/ATUALIZAR CONFIGS (UPSERT)
+app.post("/settings", async (req, res) => {
+  try {
+    const { carry_balance } = req.body;
+    // Simulando user_id 1 até ter o Auth pronto
+    const query = `
+      INSERT INTO user_settings (user_id, carry_balance)
+      VALUES (1, $1)
+      ON CONFLICT (user_id) 
+      DO UPDATE SET carry_balance = EXCLUDED.carry_balance
+    `;
+    await db.query(query, [carry_balance]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Erro ao salvar configurações" });
+  }
+});
+
+// --- USUÁRIOS ---
+
+app.get("/users", async (req, res) => {
+  try {
+    const result = await db.query(
+      "SELECT id, name, email, role FROM users ORDER BY name ASC",
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: "Erro ao buscar usuários" });
+  }
+});
+
+app.post("/users/invite", async (req, res) => {
+  try {
+    const { email, role, name } = req.body;
+    await db.query(
+      "INSERT INTO users (name, email, role, password) VALUES ($1, $2, $3, $4) ON CONFLICT (email) DO NOTHING",
+      [name || "Convidado", email, role, "123456"], // Senha padrão temporária
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Erro ao convidar usuário" });
   }
 });
 

@@ -1,41 +1,35 @@
 import axios from "axios";
 import { appParams } from "@/lib/app-params";
 
-// Criamos a instância do Axios
+// Criamos a instância do Axios conectada ao SEU servidor no Render
 export const api = axios.create({
-  // O serverUrl agora vem das suas configurações limpas
+  // Pega a URL que você configurou na Vercel (ex: https://fincontrol-victor.onrender.com)
   baseURL: appParams.apiUrl || "http://localhost:3000",
   headers: {
     "Content-Type": "application/json",
-    "X-App-Id": appParams.appId,
   },
 });
 
-// Interceptor para injetar o Token automaticamente em cada requisição
+// Interceptor simples (caso você adicione senha no futuro)
 api.interceptors.request.use(
   (config) => {
-    // Buscamos o token que salvamos no login/appParams
-    const token = appParams.token || localStorage.getItem("fin_access_token");
-
+    const token = localStorage.getItem("fin_access_token");
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
-
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  },
+  (error) => Promise.reject(error),
 );
 
-// Interceptor para lidar com erros globais (ex: 401 não autorizado)
+// Tratamento de erros
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      console.error("Sessão expirada. Redirecionando...");
-      // Opcional: localStorage.removeItem("fin_access_token");
-      // window.location.href = "/login";
+    if (error.response?.status === 404) {
+      console.error(
+        "Rota não encontrada no servidor. Verifique os caminhos da API.",
+      );
     }
     return Promise.reject(error);
   },

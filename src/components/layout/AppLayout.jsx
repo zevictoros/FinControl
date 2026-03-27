@@ -1,16 +1,31 @@
 import { Outlet, Link, useLocation } from "react-router-dom";
-import { LayoutDashboard, Receipt, LogOut, Sun, Moon } from "lucide-react";
+import {
+  LayoutDashboard,
+  Receipt,
+  LogOut,
+  Sun,
+  Moon,
+  BarChart2,
+  Bitcoin,
+  Settings,
+} from "lucide-react";
+import { useAuth } from "@/lib/AuthContext";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/ThemeContext";
 
 const navItems = [
   { path: "/", label: "Dashboard", icon: LayoutDashboard },
   { path: "/transacoes", label: "Transações", icon: Receipt },
+  { path: "/relatorios", label: "Relatórios", icon: BarChart2 },
+  { path: "/cripto", label: "Cripto", icon: Bitcoin },
+  { path: "/configuracoes", label: "Config.", icon: Settings },
 ];
 
 export default function AppLayout() {
   const location = useLocation();
   const { theme, toggle } = useTheme();
+  // 3. Pegue a função de logout do seu próprio AuthContext
+  const { logout } = useAuth();
 
   return (
     <div className="min-h-screen bg-background">
@@ -60,11 +75,10 @@ export default function AppLayout() {
                 <Moon className="w-4 h-4" />
               )}
             </button>
+
+            {/* 4. Use a sua função logout() aqui */}
             <button
-              onClick={() => {
-                localStorage.clear();
-                window.location.reload();
-              }}
+              onClick={logout}
               className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
             >
               <LogOut className="w-4 h-4" />

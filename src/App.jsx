@@ -8,6 +8,9 @@ import UserNotRegisteredError from "@/components/UserNotRegisteredError";
 import AppLayout from "@/components/layout/AppLayout";
 import Dashboard from "@/pages/Dashboard";
 import Transactions from "@/pages/Transactions";
+import Reports from "@/pages/Reports";
+import Crypto from "@/pages/Crypto";
+import Settings from "@/pages/Settings";
 import { ThemeProvider } from "@/lib/ThemeContext";
 
 const AuthenticatedApp = () => {
@@ -40,6 +43,9 @@ const AuthenticatedApp = () => {
       <Route element={<AppLayout />}>
         <Route path="/" element={<Dashboard />} />
         <Route path="/transacoes" element={<Transactions />} />
+        <Route path="/relatorios" element={<Reports />} />
+        <Route path="/cripto" element={<Crypto />} />
+        <Route path="/configuracoes" element={<Settings />} />
       </Route>
       <Route path="*" element={<PageNotFound />} />
     </Routes>

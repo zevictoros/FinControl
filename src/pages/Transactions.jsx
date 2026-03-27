@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { api } from "../api/apiClient";
+import { api } from "@/api/apiClient";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,21 +13,14 @@ import { Input } from "@/components/ui/input";
 import { Plus, Search } from "lucide-react";
 import TransactionForm from "@/components/transactions/TransactionForm";
 import TransactionList from "@/components/transactions/TransactionList";
-
-// Corrigido para 'Dashboard' (Maiúsculo) conforme o erro anterior do Vercel
-import MonthSelector from "@/components/Dashboard/MonthSelector";
-
-import {
-  CATEGORIES,
-  EXPENSE_CATEGORIES,
-  INCOME_CATEGORIES,
-} from "@/lib/categories";
+import MonthSelector from "@/components/dashboard/MonthSelector";
+import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/categories";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function Transactions() {
   const now = new Date();
-  const [month, setMonth] = useState(now.getMonth());
-  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getUTCMonth());
+  const [year, setYear] = useState(now.getUTCFullYear());
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [search, setSearch] = useState("");
@@ -36,7 +29,7 @@ export default function Transactions() {
 
   const queryClient = useQueryClient();
 
-  // Busca de transações via API padrão
+  // Busca transações do seu novo Backend
   const { data: allTransactions = [], isLoading } = useQuery({
     queryKey: ["transactions"],
     queryFn: async () => {
@@ -45,16 +38,20 @@ export default function Transactions() {
     },
   });
 
-  // Mutação para criar (Bulk ou individual)
+  // Mutação para Criar
   const createMutation = useMutation({
-    mutationFn: (records) => api.post("/transactions", records[0]),
+    mutationFn: async (records) => {
+      // Se records for um array (bulk), enviamos o primeiro ou adaptamos o backend
+      // Aqui assume-se que o backend aceita o objeto da transação
+      return api.post("/transactions", records[0]);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       setShowForm(false);
     },
   });
 
-  // Mutação para atualizar
+  // Mutação para Atualizar
   const updateMutation = useMutation({
     mutationFn: ({ id, data }) => api.put(`/transactions/${id}`, data),
     onSuccess: () => {
@@ -64,7 +61,7 @@ export default function Transactions() {
     },
   });
 
-  // Mutação para deletar
+  // Mutação para Deletar
   const deleteMutation = useMutation({
     mutationFn: (id) => api.delete(`/transactions/${id}`),
     onSuccess: () =>
@@ -74,7 +71,9 @@ export default function Transactions() {
   const filtered = useMemo(() => {
     return allTransactions.filter((t) => {
       const d = new Date(t.date);
-      const monthMatch = d.getMonth() === month && d.getFullYear() === year;
+      // Usamos UTC para evitar que o fuso horário mude o mês/dia na filtragem
+      const monthMatch =
+        d.getUTCMonth() === month && d.getUTCFullYear() === year;
       const searchMatch =
         !search || t.description.toLowerCase().includes(search.toLowerCase());
       const catMatch =
@@ -100,8 +99,9 @@ export default function Transactions() {
   if (isLoading) {
     return (
       <div className="space-y-4">
+        <Skeleton className="h-10 w-48" />
         {[...Array(5)].map((_, i) => (
-          <Skeleton key={i} className="h-16 rounded-xl" />
+          <Skeleton key={i} className="h-20 rounded-2xl" />
         ))}
       </div>
     );
@@ -111,7 +111,9 @@ export default function Transactions() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Transações</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+            Transações
+          </h1>
           <p className="text-muted-foreground text-sm mt-1">
             Gerencie suas receitas e despesas
           </p>
@@ -130,6 +132,7 @@ export default function Transactions() {
               setEditing(null);
               setShowForm(true);
             }}
+            className="shadow-sm"
           >
             <Plus className="w-4 h-4 mr-2" />
             Nova
@@ -138,65 +141,86 @@ export default function Transactions() {
       </div>
 
       {showForm && (
-        <TransactionForm
-          transaction={editing}
-          onSubmit={handleSubmit}
-          onCancel={() => {
-            setShowForm(false);
-            setEditing(null);
-          }}
-          isSubmitting={createMutation.isPending || updateMutation.isPending}
-        />
+        <div className="animate-in fade-in zoom-in duration-200">
+          <TransactionForm
+            transaction={editing}
+            onSubmit={handleSubmit}
+            onCancel={() => {
+              setShowForm(false);
+              setEditing(null);
+            }}
+            isSubmitting={createMutation.isPending || updateMutation.isPending}
+          />
+        </div>
       )}
 
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
+      {/* Barra de Filtros e Busca */}
+      <div className="flex flex-col sm:flex-row gap-3 bg-card p-4 rounded-2xl border border-border shadow-sm">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Buscar transações..."
+            placeholder="Buscar por descrição..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
+            className="pl-9 bg-background"
           />
         </div>
-        <Select value={filterCategory} onValueChange={setFilterCategory}>
-          <SelectTrigger className="w-full sm:w-44">
-            <SelectValue placeholder="Categoria" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todas categorias</SelectItem>
-            <SelectItem value="investimentos">Investimentos</SelectItem>
-            {Object.entries(EXPENSE_CATEGORIES).map(([key, val]) => (
-              <SelectItem key={key} value={key}>
-                ↓ {val.label}
-              </SelectItem>
-            ))}
-            {Object.entries(INCOME_CATEGORIES).map(([key, val]) => (
-              <SelectItem key={key} value={key}>
-                ↑ {val.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={filterType} onValueChange={setFilterType}>
-          <SelectTrigger className="w-full sm:w-36">
-            <SelectValue placeholder="Tipo" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos tipos</SelectItem>
-            <SelectItem value="receita">Receitas</SelectItem>
-            <SelectItem value="despesa">Despesas</SelectItem>
-            <SelectItem value="investimento">Investimentos</SelectItem>
-          </SelectContent>
-        </Select>
+
+        <div className="flex flex-wrap gap-2">
+          <Select value={filterType} onValueChange={setFilterType}>
+            <SelectTrigger className="w-full sm:w-36 bg-background">
+              <SelectValue placeholder="Tipo" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos tipos</SelectItem>
+              <SelectItem value="receita">Receitas</SelectItem>
+              <SelectItem value="despesa">Despesas</SelectItem>
+              <SelectItem value="investimento">Investimentos</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={filterCategory} onValueChange={setFilterCategory}>
+            <SelectTrigger className="w-full sm:w-48 bg-background">
+              <SelectValue placeholder="Categoria" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas categorias</SelectItem>
+              <SelectItem value="investimentos">Investimentos</SelectItem>
+              <optgroup label="Despesas">
+                {Object.entries(EXPENSE_CATEGORIES).map(([key, val]) => (
+                  <SelectItem key={key} value={key}>
+                    {val.label}
+                  </SelectItem>
+                ))}
+              </optgroup>
+              <optgroup label="Receitas">
+                {Object.entries(INCOME_CATEGORIES).map(([key, val]) => (
+                  <SelectItem key={key} value={key}>
+                    {val.label}
+                  </SelectItem>
+                ))}
+              </optgroup>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
-      <TransactionList
-        transactions={filtered}
-        onEdit={handleEdit}
-        onDelete={(id) => deleteMutation.mutate(id)}
-      />
+      <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
+        <TransactionList
+          transactions={filtered}
+          onEdit={handleEdit}
+          onDelete={(id) => {
+            if (confirm("Tem certeza que deseja excluir esta transação?")) {
+              deleteMutation.mutate(id);
+            }
+          }}
+        />
+        {filtered.length === 0 && (
+          <div className="p-12 text-center text-muted-foreground">
+            Nenhuma transação encontrada para os filtros selecionados.
+          </div>
+        )}
+      </div>
     </div>
   );
 }
