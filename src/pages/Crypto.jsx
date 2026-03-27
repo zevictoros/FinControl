@@ -19,22 +19,16 @@ const POPULAR_COINS = [
   { id: "ethereum", name: "Ethereum", symbol: "ETH" },
   { id: "binancecoin", name: "BNB", symbol: "BNB" },
   { id: "solana", name: "Solana", symbol: "SOL" },
-  { id: "cardano", name: "Cardano", symbol: "ADA" },
-  { id: "ripple", name: "XRP", symbol: "XRP" },
-  { id: "dogecoin", name: "Dogecoin", symbol: "DOGE" },
-  { id: "polkadot", name: "Polkadot", symbol: "DOT" },
-  { id: "chainlink", name: "Chainlink", symbol: "LINK" },
-  { id: "litecoin", name: "Litecoin", symbol: "LTC" },
 ];
 
 async function fetchPrices(coinIds) {
-  if (!coinIds.length) return {};
+  if (!coinIds || coinIds.length === 0) return {};
   const ids = coinIds.join(",");
   try {
     const res = await fetch(
       `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=brl&include_24hr_change=true`,
     );
-    return res.json();
+    return await res.json();
   } catch (error) {
     console.error("Erro ao buscar preços na CoinGecko:", error);
     return {};
@@ -48,12 +42,12 @@ export default function Crypto() {
   const [loadingPrices, setLoadingPrices] = useState(false);
   const queryClient = useQueryClient();
 
-  // Busca de holdings no seu novo Backend Neon
+  // Busca de holdings no Backend Neon
   const { data: holdings = [], isLoading } = useQuery({
     queryKey: ["crypto"],
     queryFn: async () => {
       const response = await api.get("/crypto-holdings");
-      return response.data;
+      return response.data || [];
     },
   });
 
@@ -72,32 +66,59 @@ export default function Crypto() {
   });
 
   const loadPrices = async () => {
-    if (!holdings.length) return;
+    if (!holdings || holdings.length === 0) return;
     setLoadingPrices(true);
-    const ids = [...new Set(holdings.map((h) => h.coin_id))];
+    // Busca os IDs únicos salvos (os coins_id da CoinGecko)
+    const ids = [
+      ...new Set(
+        holdings.map((h) =>
+          h.symbol.toLowerCase() === "btc"
+            ? "bitcoin"
+            : h.symbol.toLowerCase() === "eth"
+              ? "ethereum"
+              : h.symbol.toLowerCase() === "sol"
+                ? "solana"
+                : h.symbol.toLowerCase() === "bnb"
+                  ? "binancecoin"
+                  : h.symbol.toLowerCase(),
+        ),
+      ),
+    ];
+
     const data = await fetchPrices(ids);
     setPrices(data);
     setLoadingPrices(false);
   };
 
   useEffect(() => {
-    if (holdings.length) loadPrices();
+    if (holdings.length > 0) {
+      loadPrices();
+    }
   }, [holdings]);
 
   const handleAdd = (e) => {
     e.preventDefault();
     const coin = POPULAR_COINS.find((c) => c.id === form.coin_id);
+
+    // Envia os dados no formato que o seu server.js (Neon) espera
     createMutation.mutate({
-      coin_id: coin.id,
-      coin_name: coin.name,
-      coin_symbol: coin.symbol,
-      quantity: parseFloat(form.quantity),
+      symbol: coin.symbol,
+      amount: parseFloat(form.quantity) || 0,
     });
   };
 
   const totalPortfolio = holdings.reduce((sum, h) => {
-    const price = prices[h.coin_id]?.brl || 0;
-    return sum + h.quantity * price;
+    // Mapeia o símbolo para o ID da CoinGecko para pegar o preço
+    const coinIdMap = {
+      BTC: "bitcoin",
+      ETH: "ethereum",
+      SOL: "solana",
+      BNB: "binancecoin",
+    };
+    const id = coinIdMap[h.symbol.toUpperCase()] || h.symbol.toLowerCase();
+    const price = prices[id]?.brl || 0;
+    const qty = parseFloat(h.amount) || 0;
+    return sum + qty * price;
   }, 0);
 
   return (
@@ -132,13 +153,13 @@ export default function Crypto() {
         <p className="text-sm text-muted-foreground font-medium uppercase tracking-wider mb-1">
           Total da Carteira
         </p>
-        <p className="text-3xl font-bold text-foreground">
+        <div className="text-3xl font-bold text-foreground">
           {isLoading ? (
             <Skeleton className="h-9 w-40" />
           ) : (
-            formatCurrency(totalPortfolio)
+            formatCurrency(totalPortfolio || 0)
           )}
-        </p>
+        </div>
       </div>
 
       {/* Formulário de Adição */}
@@ -209,10 +230,19 @@ export default function Crypto() {
       ) : (
         <div className="space-y-3">
           {holdings.map((h) => {
-            const priceData = prices[h.coin_id];
+            const coinIdMap = {
+              BTC: "bitcoin",
+              ETH: "ethereum",
+              SOL: "solana",
+              BNB: "binancecoin",
+            };
+            const id =
+              coinIdMap[h.symbol.toUpperCase()] || h.symbol.toLowerCase();
+            const priceData = prices[id];
             const price = priceData?.brl || 0;
             const change = priceData?.brl_24h_change || 0;
-            const total = h.quantity * price;
+            const qty = parseFloat(h.amount) || 0;
+            const total = qty * price;
 
             return (
               <div
@@ -223,15 +253,15 @@ export default function Crypto() {
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
                       <span className="text-xs font-bold text-primary">
-                        {h.coin_symbol}
+                        {h.symbol}
                       </span>
                     </div>
                     <div>
                       <p className="font-semibold text-sm sm:text-base">
-                        {h.coin_name}
+                        {h.symbol.toUpperCase()}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {h.quantity} {h.coin_symbol}
+                        {qty} {h.symbol}
                       </p>
                     </div>
                   </div>
@@ -256,7 +286,7 @@ export default function Crypto() {
                     <p className="font-medium text-sm">
                       {loadingPrices
                         ? "..."
-                        : price
+                        : price > 0
                           ? formatCurrency(price)
                           : "---"}
                     </p>
@@ -268,7 +298,7 @@ export default function Crypto() {
                     <p className="font-bold text-sm text-foreground">
                       {loadingPrices
                         ? "..."
-                        : price
+                        : total > 0
                           ? formatCurrency(total)
                           : "---"}
                     </p>
