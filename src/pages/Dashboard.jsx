@@ -14,36 +14,37 @@ export default function Dashboard() {
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
 
-  // Busca todas as transações do SEU banco Neon via Render
+  // Busca todas as transações do banco Neon
   const { data: allTransactions = [], isLoading: loadingTx } = useQuery({
     queryKey: ["transactions"],
     queryFn: async () => {
       const response = await api.get("/transactions");
-      return response.data;
+      return Array.isArray(response.data) ? response.data : [];
     },
   });
 
-  // Busca configurações do usuário (ex: carry_balance)
+  // Busca configurações do usuário
   const { data: settings, isLoading: loadingSettings } = useQuery({
     queryKey: ["userSettings"],
     queryFn: async () => {
       try {
         const response = await api.get("/settings");
-        return response.data;
+        return response.data || { carry_balance: false };
       } catch {
-        return { carry_balance: false }; // Fallback caso não exista a rota ainda
+        return { carry_balance: false };
       }
     },
   });
 
   const isLoading = loadingTx || loadingSettings;
 
-  // Filtra transações do mês selecionado
+  // Filtra transações do mês selecionado (Correção de Fuso Horário)
   const monthTransactions = useMemo(() => {
     return allTransactions.filter((t) => {
-      const d = new Date(t.date);
-      // Ajuste para evitar problemas de fuso horário na comparação
-      return d.getUTCMonth() === month && d.getUTCFullYear() === year;
+      if (!t.date) return false;
+      // Extrai YYYY-MM-DD com segurança sem converter fuso
+      const [y, m] = t.date.split("T")[0].split("-");
+      return parseInt(m) - 1 === month && parseInt(y) === year;
     });
   }, [allTransactions, month, year]);
 
@@ -55,37 +56,33 @@ export default function Dashboard() {
     const prevYear = month === 0 ? year - 1 : year;
 
     const prevTx = allTransactions.filter((t) => {
-      const d = new Date(t.date);
-      return d.getUTCMonth() === prevMonth && d.getUTCFullYear() === prevYear;
+      if (!t.date) return false;
+      const [y, m] = t.date.split("T")[0].split("-");
+      return parseInt(m) - 1 === prevMonth && parseInt(y) === prevYear;
     });
 
-    const r = prevTx
-      .filter((t) => t.type === "receita")
-      .reduce((s, t) => s + t.amount, 0);
-    const d = prevTx
-      .filter((t) => t.type === "despesa")
-      .reduce((s, t) => s + t.amount, 0);
-    const i = prevTx
-      .filter((t) => t.type === "investimento")
-      .reduce((s, t) => s + t.amount, 0);
+    const calculateSum = (type) =>
+      prevTx
+        .filter((t) => t.type === type)
+        .reduce((s, t) => s + (Number(t.amount) || 0), 0);
 
-    const balance = r - d - i;
+    const balance =
+      calculateSum("receita") -
+      calculateSum("despesa") -
+      calculateSum("investimento");
     return balance > 0 ? balance : 0;
   }, [allTransactions, month, year, settings]);
 
-  // Cálculos de Estatísticas (Receitas, Despesas, Investimentos)
+  // Cálculos de Estatísticas (Correção de NaN)
   const stats = useMemo(() => {
-    const receitasNoMes = monthTransactions
-      .filter((t) => t.type === "receita")
-      .reduce((sum, t) => sum + t.amount, 0);
+    const calculateSum = (type) =>
+      monthTransactions
+        .filter((t) => t.type === type)
+        .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
-    const despesas = monthTransactions
-      .filter((t) => t.type === "despesa")
-      .reduce((sum, t) => sum + t.amount, 0);
-
-    const investimentos = monthTransactions
-      .filter((t) => t.type === "investimento")
-      .reduce((sum, t) => sum + t.amount, 0);
+    const receitasNoMes = calculateSum("receita");
+    const despesas = calculateSum("despesa");
+    const investimentos = calculateSum("investimento");
 
     const receitasTotais = receitasNoMes + prevMonthBalance;
 
@@ -132,10 +129,10 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* Cards de resumo (Receita, Despesa, Saldo, Investimentos) */}
+      {/* Cards de resumo corrigidos */}
       <StatsCards data={stats} />
 
-      {/* Gráficos de Pizza */}
+      {/* Gráficos de Pizza (passando transactions para processamento interno) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <CategoryPieChart transactions={monthTransactions} />
         <IncomePieChart transactions={monthTransactions} />
@@ -144,7 +141,7 @@ export default function Dashboard() {
       {/* Gráfico de Barras Mensal */}
       <MonthlyBarChart transactions={allTransactions} />
 
-      {/* Tabela de Transações Recentes do Mês */}
+      {/* Tabela de Transações Recentes */}
       <RecentTransactions transactions={monthTransactions} />
     </div>
   );
