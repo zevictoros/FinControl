@@ -1,3 +1,4 @@
+require('dotenv').config(); // Instale com: npm install dotenv
 const { Pool } = require("pg");
 
 const pool = new Pool({

@@ -8,7 +8,7 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
-// Rota de Check-in
+// Rota de Check-in (Health Check)
 app.get("/", (req, res) => {
   res.send("🚀 API FinControl rodando com sucesso no Neon.tech");
 });
@@ -18,13 +18,12 @@ app.get("/", (req, res) => {
 // 🔹 LISTAR
 app.get("/transactions", async (req, res) => {
   try {
-    // Busca todas as transações (no futuro, você filtrará por user_id aqui)
     const result = await db.query(
       "SELECT * FROM transactions ORDER BY date DESC, id DESC",
     );
     res.json(result.rows);
   } catch (err) {
-    console.error("Erro ao buscar:", err);
+    console.error("❌ Erro ao buscar transações:", err.message);
     res.status(500).json({ error: "Erro ao buscar transações" });
   }
 });
@@ -33,19 +32,16 @@ app.get("/transactions", async (req, res) => {
 app.post("/transactions", async (req, res) => {
   try {
     const { description, amount, category, type, date, notes } = req.body;
-
-    // O RETURNING * nos permite devolver o objeto completo criado para o Frontend
     const query = `
       INSERT INTO transactions (description, amount, category, type, date, notes)
       VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *
     `;
     const values = [description, amount, category, type, date, notes];
-
     const result = await db.query(query, values);
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    console.error("Erro ao criar:", err);
+    console.error("❌ Erro ao criar transação:", err.message);
     res.status(500).json({ error: "Erro ao criar transação" });
   }
 });
@@ -55,25 +51,27 @@ app.put("/transactions/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const { description, amount, category, type, date, notes } = req.body;
-
     const query = `
       UPDATE transactions
       SET description=$1, amount=$2, category=$3, type=$4, date=$5, notes=$6
       WHERE id=$7
       RETURNING *
     `;
-    const values = [description, amount, category, type, date, notes, id];
-
-    const result = await db.query(query, values);
-
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: "Transação não encontrada" });
-    }
-
+    const result = await db.query(query, [
+      description,
+      amount,
+      category,
+      type,
+      date,
+      notes,
+      id,
+    ]);
+    if (result.rowCount === 0)
+      return res.status(404).json({ error: "Não encontrado" });
     res.json(result.rows[0]);
   } catch (err) {
-    console.error("Erro ao atualizar:", err);
-    res.status(500).json({ error: "Erro ao atualizar transação" });
+    console.error("❌ Erro ao atualizar transação:", err.message);
+    res.status(500).json({ error: "Erro ao atualizar" });
   }
 });
 
@@ -84,34 +82,76 @@ app.delete("/transactions/:id", async (req, res) => {
     const result = await db.query("DELETE FROM transactions WHERE id=$1", [id]);
     res.json({ deleted: result.rowCount });
   } catch (err) {
-    console.error("Erro ao deletar:", err);
-    res.status(500).json({ error: "Erro ao deletar transação" });
+    console.error("❌ Erro ao deletar transação:", err.message);
+    res.status(500).json({ error: "Erro ao deletar" });
   }
 });
 
-// --- CONFIGURAÇÕES (Necessário para a tela Settings e Dashboard) ---
+// --- CRYPTO HOLDINGS (Nova seção para sua aba Crypto) ---
 
-// 🔹 BUSCAR CONFIGS
+// 🔹 LISTAR MOEDAS
+app.get("/crypto-holdings", async (req, res) => {
+  try {
+    const result = await db.query(
+      "SELECT * FROM crypto_holdings ORDER BY symbol ASC",
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error("❌ Erro ao buscar crypto:", err.message);
+    res.status(500).json({ error: "Erro ao buscar cripto" });
+  }
+});
+
+// 🔹 SALVAR/ATUALIZAR MOEDA (UPSERT)
+app.post("/crypto-holdings", async (req, res) => {
+  try {
+    const { symbol, amount } = req.body;
+    const query = `
+      INSERT INTO crypto_holdings (symbol, amount)
+      VALUES ($1, $2)
+      ON CONFLICT (symbol) 
+      DO UPDATE SET amount = EXCLUDED.amount, updated_at = CURRENT_TIMESTAMP
+      RETURNING *
+    `;
+    const result = await db.query(query, [symbol.toUpperCase(), amount]);
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error("❌ Erro ao salvar crypto:", err.message);
+    res.status(500).json({ error: "Erro ao salvar cripto" });
+  }
+});
+
+// 🔹 DELETAR MOEDA
+app.delete("/crypto-holdings/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    await db.query("DELETE FROM crypto_holdings WHERE id=$1", [id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("❌ Erro ao deletar crypto:", err.message);
+    res.status(500).json({ error: "Erro ao deletar cripto" });
+  }
+});
+
+// --- CONFIGURAÇÕES ---
+
 app.get("/settings", async (req, res) => {
   try {
     const result = await db.query(
       "SELECT carry_balance FROM user_settings LIMIT 1",
     );
-    // Se result.rows estiver vazio, retornamos um padrão em vez de undefined
     const settings =
       result.rows.length > 0 ? result.rows[0] : { carry_balance: false };
     res.json(settings);
   } catch (err) {
-    console.error("Erro detalhado no banco:", err.message); // Isso vai te mostrar o erro real no console
+    console.error("❌ Erro ao buscar settings:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// 🔹 SALVAR/ATUALIZAR CONFIGS (UPSERT)
 app.post("/settings", async (req, res) => {
   try {
     const { carry_balance } = req.body;
-    // Simulando user_id 1 até ter o Auth pronto
     const query = `
       INSERT INTO user_settings (user_id, carry_balance)
       VALUES (1, $1)
@@ -121,6 +161,7 @@ app.post("/settings", async (req, res) => {
     await db.query(query, [carry_balance]);
     res.json({ success: true });
   } catch (err) {
+    console.error("❌ Erro ao salvar settings:", err.message);
     res.status(500).json({ error: "Erro ao salvar configurações" });
   }
 });
@@ -134,6 +175,7 @@ app.get("/users", async (req, res) => {
     );
     res.json(result.rows);
   } catch (err) {
+    console.error("❌ Erro ao buscar usuários:", err.message);
     res.status(500).json({ error: "Erro ao buscar usuários" });
   }
 });
@@ -143,14 +185,22 @@ app.post("/users/invite", async (req, res) => {
     const { email, role, name } = req.body;
     await db.query(
       "INSERT INTO users (name, email, role, password) VALUES ($1, $2, $3, $4) ON CONFLICT (email) DO NOTHING",
-      [name || "Convidado", email, role, "123456"], // Senha padrão temporária
+      [name || "Convidado", email, role, "123456"],
     );
     res.json({ success: true });
   } catch (err) {
+    console.error("❌ Erro ao convidar usuário:", err.message);
     res.status(500).json({ error: "Erro ao convidar usuário" });
   }
 });
 
+// Captura de rotas inexistentes (Para evitar o 404 sem explicação)
+app.use((req, res) => {
+  res
+    .status(404)
+    .json({ error: `Rota ${req.originalUrl} não encontrada no servidor.` });
+});
+
 app.listen(PORT, () => {
-  console.log(`🚀 Backend rodando na porta ${PORT}`);
+  console.log(`🚀 Backend FinControl rodando na porta ${PORT}`);
 });
