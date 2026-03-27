@@ -94,14 +94,16 @@ app.delete("/transactions/:id", async (req, res) => {
 // 🔹 BUSCAR CONFIGS
 app.get("/settings", async (req, res) => {
   try {
-    // Por enquanto, pegamos a config de um usuário fixo (ou a primeira que existir)
-    // até você implementar o sistema de Login completo
     const result = await db.query(
       "SELECT carry_balance FROM user_settings LIMIT 1",
     );
-    res.json(result.rows[0] || { carry_balance: false });
+    // Se result.rows estiver vazio, retornamos um padrão em vez de undefined
+    const settings =
+      result.rows.length > 0 ? result.rows[0] : { carry_balance: false };
+    res.json(settings);
   } catch (err) {
-    res.status(500).json({ error: "Erro ao buscar configurações" });
+    console.error("Erro detalhado no banco:", err.message); // Isso vai te mostrar o erro real no console
+    res.status(500).json({ error: err.message });
   }
 });
 

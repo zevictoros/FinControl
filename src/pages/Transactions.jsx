@@ -30,7 +30,11 @@ export default function Transactions() {
   const queryClient = useQueryClient();
 
   // Busca transações do seu novo Backend
-  const { data: allTransactions = [], isLoading } = useQuery({
+  const {
+    data: allTransactions = [],
+    isLoading,
+    isError,
+  } = useQuery({
     queryKey: ["transactions"],
     queryFn: async () => {
       const response = await api.get("/transactions");
@@ -41,8 +45,7 @@ export default function Transactions() {
   // Mutação para Criar
   const createMutation = useMutation({
     mutationFn: async (records) => {
-      // Se records for um array (bulk), enviamos o primeiro ou adaptamos o backend
-      // Aqui assume-se que o backend aceita o objeto da transação
+      // Enviamos o primeiro registro do array gerado pelo formulário
       return api.post("/transactions", records[0]);
     },
     onSuccess: () => {
@@ -69,13 +72,14 @@ export default function Transactions() {
   });
 
   const filtered = useMemo(() => {
+    if (!Array.isArray(allTransactions)) return [];
+
     return allTransactions.filter((t) => {
       const d = new Date(t.date);
-      // Usamos UTC para evitar que o fuso horário mude o mês/dia na filtragem
       const monthMatch =
         d.getUTCMonth() === month && d.getUTCFullYear() === year;
       const searchMatch =
-        !search || t.description.toLowerCase().includes(search.toLowerCase());
+        !search || t.description?.toLowerCase().includes(search.toLowerCase());
       const catMatch =
         filterCategory === "all" || t.category === filterCategory;
       const typeMatch = filterType === "all" || t.type === filterType;
@@ -154,7 +158,6 @@ export default function Transactions() {
         </div>
       )}
 
-      {/* Barra de Filtros e Busca */}
       <div className="flex flex-col sm:flex-row gap-3 bg-card p-4 rounded-2xl border border-border shadow-sm">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -186,39 +189,52 @@ export default function Transactions() {
             <SelectContent>
               <SelectItem value="all">Todas categorias</SelectItem>
               <SelectItem value="investimentos">Investimentos</SelectItem>
-              <optgroup label="Despesas">
-                {Object.entries(EXPENSE_CATEGORIES).map(([key, val]) => (
-                  <SelectItem key={key} value={key}>
-                    {val.label}
-                  </SelectItem>
-                ))}
-              </optgroup>
-              <optgroup label="Receitas">
-                {Object.entries(INCOME_CATEGORIES).map(([key, val]) => (
-                  <SelectItem key={key} value={key}>
-                    {val.label}
-                  </SelectItem>
-                ))}
-              </optgroup>
+
+              {/* Separador Manual para evitar erro de validateDOMNesting */}
+              <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground bg-slate-50/50">
+                Despesas
+              </div>
+              {Object.entries(EXPENSE_CATEGORIES).map(([key, val]) => (
+                <SelectItem key={key} value={key}>
+                  {val.label}
+                </SelectItem>
+              ))}
+
+              <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground bg-slate-50/50 border-t mt-1">
+                Receitas
+              </div>
+              {Object.entries(INCOME_CATEGORIES).map(([key, val]) => (
+                <SelectItem key={key} value={key}>
+                  {val.label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
       </div>
 
       <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
-        <TransactionList
-          transactions={filtered}
-          onEdit={handleEdit}
-          onDelete={(id) => {
-            if (confirm("Tem certeza que deseja excluir esta transação?")) {
-              deleteMutation.mutate(id);
-            }
-          }}
-        />
-        {filtered.length === 0 && (
-          <div className="p-12 text-center text-muted-foreground">
-            Nenhuma transação encontrada para os filtros selecionados.
+        {isError ? (
+          <div className="p-12 text-center text-red-500">
+            Erro ao carregar transações. Verifique a conexão com o servidor.
           </div>
+        ) : (
+          <>
+            <TransactionList
+              transactions={filtered}
+              onEdit={handleEdit}
+              onDelete={(id) => {
+                if (confirm("Tem certeza que deseja excluir esta transação?")) {
+                  deleteMutation.mutate(id);
+                }
+              }}
+            />
+            {filtered.length === 0 && (
+              <div className="p-12 text-center text-muted-foreground">
+                Nenhuma transação encontrada para os filtros selecionados.
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
