@@ -2,14 +2,14 @@ import React, { useState } from "react";
 import { api } from "@/api/apiClient";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { CheckCircle2, Loader2 } from "lucide-react"; // Adicionado Loader2 conforme seu anterior
+import { useAuth } from "@/lib/AuthContext";
+import { CheckCircle2, Loader2 } from "lucide-react";
 import CategoryManager from "@/components/settings/CategoryManager";
-import { useAuth } from "@/lib/AuthContext"; // Reintegrado do seu anterior
+import UserManagement from "@/components/settings/UserManagement";
 
-// Lógica de LocalStorage para o alerta de cripto mantida conforme seu atual
+// Helper para persistir o alerta de cripto localmente (já que é uma config de UI)
 const APP_SETTINGS_KEY = "fincontrol_app_settings";
 function loadAppSettings() {
   try {
@@ -27,23 +27,23 @@ function saveAppSettings(data) {
 
 export default function Settings() {
   const queryClient = useQueryClient();
-  const { user } = useAuth(); // Recuperando usuário para verificar admin
+  const { user } = useAuth();
   const [saved, setSaved] = useState(false);
   const [cryptoAlertPct, setCryptoAlertPct] = useState(
     () => loadAppSettings().crypto_alert_pct ?? 5,
   );
 
-  // 1. Busca configurações (Neon/Render)
+  // 1. Busca Configurações no seu backend
   const { data: settings, isLoading } = useQuery({
     queryKey: ["userSettings"],
     queryFn: async () => {
       const response = await api.get("/settings");
-      // Note: No seu backend Neon, settings costuma vir como objeto direto, não lista
-      return response.data;
+      // Se o backend retornar um array, pegamos o primeiro objeto
+      return Array.isArray(response.data) ? response.data[0] : response.data;
     },
   });
 
-  // 2. Mutação unificada conforme seu código anterior (Neon usa POST para salvar/atualizar)
+  // 2. Mutação Única (Upsert) para o seu backend
   const saveMutation = useMutation({
     mutationFn: (data) => api.post("/settings", data),
     onSuccess: () => {
@@ -73,7 +73,7 @@ export default function Settings() {
           </p>
         </div>
 
-        <div className="h-6 flex items-center gap-3">
+        <div className="h-6 flex items-center">
           {saveMutation.isPending && (
             <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
           )}
@@ -86,16 +86,19 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* Preferências gerais */}
+      {/* Preferências da Conta */}
       <div className="bg-card rounded-2xl border border-border p-6 shadow-sm space-y-6">
-        <h3 className="font-semibold text-base">Preferências</h3>
+        <h3 className="font-semibold text-base">Preferências da Conta</h3>
 
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="font-medium">Transportar saldo para o próximo mês</p>
-            <p className="text-sm text-muted-foreground mt-1">
-              Quando ativado, o saldo líquido do mês anterior será somado às
-              receitas do mês seguinte no dashboard.
+        {/* Carry Balance */}
+        <div className="flex items-start justify-between gap-4 py-2">
+          <div className="space-y-1">
+            <p className="font-medium text-foreground">
+              Transportar saldo para o próximo mês
+            </p>
+            <p className="text-sm text-muted-foreground leading-relaxed max-w-md">
+              Quando ativado, o saldo líquido do mês anterior será somado
+              automaticamente ao dashboard do mês atual.
             </p>
           </div>
           {isLoading ? (
@@ -109,10 +112,13 @@ export default function Settings() {
           )}
         </div>
 
+        {/* Cripto Alert - Salva no LocalStorage por ser preferência de exibição */}
         <div className="border-t border-border pt-5 flex items-start justify-between gap-4">
-          <div>
-            <p className="font-medium">Alerta de variação de cripto</p>
-            <p className="text-sm text-muted-foreground mt-1">
+          <div className="space-y-1">
+            <p className="font-medium text-foreground">
+              Alerta de variação de cripto
+            </p>
+            <p className="text-sm text-muted-foreground leading-relaxed max-w-md">
               Gera um insight no dashboard quando uma criptomoeda variar mais
               que esse percentual em 24h.
             </p>
@@ -120,14 +126,17 @@ export default function Settings() {
           <div className="flex items-center gap-1.5 flex-shrink-0">
             <Input
               type="number"
-              min="1"
-              max="100"
-              step="1"
               value={cryptoAlertPct}
               onChange={(e) => {
-                const v = parseFloat(e.target.value) || 5;
+                const v =
+                  e.target.value === ""
+                    ? ""
+                    : Math.min(100, Math.max(1, Number(e.target.value)));
                 setCryptoAlertPct(v);
-                saveAppSettings({ crypto_alert_pct: v });
+                if (v !== "") {
+                  saveAppSettings({ crypto_alert_pct: Number(v) });
+                  flashSaved();
+                }
               }}
               className="w-20 text-right"
             />
@@ -136,11 +145,18 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* Gerenciamento de categorias (Mantido conforme seu código atual) */}
+      {/* Gerenciamento de Categorias */}
       <div className="bg-card rounded-2xl border border-border p-6 shadow-sm">
         <h3 className="font-semibold text-base mb-5">Categorias</h3>
         <CategoryManager />
       </div>
+
+      {/* Gerenciamento de Usuários (Apenas Admin) */}
+      {isAdmin && (
+        <div className="pt-4 border-t border-border">
+          <UserManagement />
+        </div>
+      )}
     </div>
   );
 }

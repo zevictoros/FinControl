@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Outlet, Link, useLocation } from "react-router-dom";
+import { Outlet, Link, useLocation, useNavigate } from "react-router-dom"; // Adicionado useNavigate
 import {
   LayoutDashboard,
   Receipt,
+  LogOut,
   Sun,
   Moon,
   BarChart2,
@@ -15,6 +16,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/ThemeContext";
+import { useAuth } from "@/lib/AuthContext"; // Importado para gerenciar o Logout
 
 const navItems = [
   { path: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -28,8 +30,15 @@ const navItems = [
 
 export default function AppLayout() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { theme, toggle } = useTheme();
+  const { logout } = useAuth(); // Obtendo a função de logout do seu contexto real
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const handleLogout = () => {
+    logout(); // Limpa tokens e estado do usuário
+    navigate("/login"); // Redireciona para a tela de login
+  };
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -86,6 +95,17 @@ export default function AppLayout() {
             );
           })}
         </nav>
+
+        {/* Bottom actions */}
+        <div className="px-3 py-4 border-t border-border space-y-0.5 flex-shrink-0">
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+          >
+            <LogOut className="w-4 h-4 flex-shrink-0" />
+            <span>Sair</span>
+          </button>
+        </div>
       </aside>
 
       {/* Main content */}

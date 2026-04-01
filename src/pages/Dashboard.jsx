@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { api } from "@/api/apiClient";
+import { api } from "@/api/apiClient"; // Usando sua API real
 import { useQuery } from "@tanstack/react-query";
 import StatsCards from "@/components/dashboard/StatsCards";
 import CategoryPieChart from "@/components/dashboard/CategoryPieChart";
@@ -10,7 +10,6 @@ import MonthSelector from "@/components/dashboard/MonthSelector";
 import Insights from "@/components/dashboard/Insights";
 import { Skeleton } from "@/components/ui/skeleton";
 
-// Função para buscar preços de Cripto (Igual ao seu antigo)
 async function fetchCryptoPrices(coinIds) {
   if (!coinIds.length) return {};
   const ids = coinIds.join(",");
@@ -25,7 +24,7 @@ export default function Dashboard() {
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
 
-  // 1. Busca todas as transações (Neon/Render)
+  // 1. Busca Transações (Neon/Render)
   const { data: allTransactions = [], isLoading: loadingTx } = useQuery({
     queryKey: ["transactions"],
     queryFn: async () => {
@@ -34,20 +33,23 @@ export default function Dashboard() {
     },
   });
 
-  // 2. Busca configurações do usuário
+  // 2. Busca Configurações (Neon/Render)
   const { data: settings, isLoading: loadingSettings } = useQuery({
     queryKey: ["userSettings"],
     queryFn: async () => {
       try {
         const response = await api.get("/settings");
-        return response.data || { carry_balance: false };
+        // Se retornar array, pega o primeiro, senão o objeto
+        return Array.isArray(response.data)
+          ? response.data[0]
+          : response.data || { carry_balance: false };
       } catch {
         return { carry_balance: false };
       }
     },
   });
 
-  // 3. Busca Cripto Holdings
+  // 3. Busca Cripto (Neon/Render)
   const { data: cryptoHoldings = [] } = useQuery({
     queryKey: ["crypto"],
     queryFn: async () => {
@@ -56,50 +58,37 @@ export default function Dashboard() {
     },
   });
 
-  // 4. Busca Preços de Cripto (Igual ao seu antigo, mas usando dados da nova API)
+  // 4. Preços Cripto (Externo)
   const { data: cryptoPrices = {} } = useQuery({
-    queryKey: [
-      "cryptoPrices",
-      cryptoHoldings.map((h) => h.coin_id || h.symbol).join(","),
-    ],
-    queryFn: () => {
-      // Mapeia os IDs para a Coingecko (Garante IDs únicos e válidos)
-      const ids = [
-        ...new Set(
-          cryptoHoldings.map((h) => h.coin_id || h.symbol?.toLowerCase()),
-        ),
-      ];
-      return fetchCryptoPrices(ids);
-    },
+    queryKey: ["cryptoPrices", cryptoHoldings.map((h) => h.coin_id).join(",")],
+    queryFn: () =>
+      fetchCryptoPrices([...new Set(cryptoHoldings.map((h) => h.coin_id))]),
     enabled: cryptoHoldings.length > 0,
     staleTime: 5 * 60 * 1000,
   });
 
   const isLoading = loadingTx || loadingSettings;
 
-  // 5. Filtra transações do mês selecionado
+  // 5. Filtro de Transações (Lógica do Antigo: split para evitar erro de Timezone)
   const monthTransactions = useMemo(() => {
     return allTransactions.filter((t) => {
       if (!t.date) return false;
-      const datePart = t.date.split("T")[0];
-      const [y, m] = datePart.split("-");
+      const [y, m] = t.date.split("T")[0].split("-");
       return parseInt(m) - 1 === month && parseInt(y) === year;
     });
   }, [allTransactions, month, year]);
 
-  // 6. Lógica de Saldo Anterior (Carry Over)
+  // 6. Lógica de Saldo Anterior (Protegida contra NaN)
   const prevMonthBalance = useMemo(() => {
     if (!settings?.carry_balance) return 0;
 
-    const prevDate = new Date(year, month - 1, 1);
-    const prevM = prevDate.getMonth();
-    const prevY = prevDate.getFullYear();
+    const prevMonth = month === 0 ? 11 : month - 1;
+    const prevYear = month === 0 ? year - 1 : year;
 
     const prevTx = allTransactions.filter((t) => {
       if (!t.date) return false;
-      const datePart = t.date.split("T")[0];
-      const [y, m] = datePart.split("-");
-      return parseInt(m) - 1 === prevM && parseInt(y) === prevY;
+      const [y, m] = t.date.split("T")[0].split("-");
+      return parseInt(m) - 1 === prevMonth && parseInt(y) === prevYear;
     });
 
     const calculateSum = (type) =>
@@ -112,39 +101,43 @@ export default function Dashboard() {
       calculateSum("despesa") -
       calculateSum("investimento");
 
-    return balance > 0 ? balance : 0;
+    return balance; // Retornamos o saldo real (pode ser negativo)
   }, [allTransactions, month, year, settings]);
 
-  // 7. Cálculos de Estatísticas para os Cards
+  // 7. Estatísticas Finais (Garantia total contra NaN)
   const stats = useMemo(() => {
     const calculateSum = (type) =>
       monthTransactions
         .filter((t) => t.type === type)
         .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
-    const receitasNoMes = calculateSum("receita");
-    const despesas = calculateSum("despesa");
+    const receitasBase = calculateSum("receita");
+    const despesasBase = calculateSum("despesa");
     const investimentos = calculateSum("investimento");
 
-    const receitasTotais = receitasNoMes + prevMonthBalance;
+    // Lógica: Se saldo anterior for positivo, soma na receita. Se negativo, soma na despesa.
+    const receitas =
+      receitasBase + (prevMonthBalance > 0 ? prevMonthBalance : 0);
+    const despesas =
+      despesasBase + (prevMonthBalance < 0 ? Math.abs(prevMonthBalance) : 0);
 
     return {
-      receitas: receitasTotais,
+      receitas,
       despesas,
       investimentos,
-      saldo: receitasTotais - despesas - investimentos,
+      saldo: receitas - despesas - investimentos,
     };
   }, [monthTransactions, prevMonthBalance]);
 
   if (isLoading) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 p-4">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[...Array(4)].map((_, i) => (
             <Skeleton key={i} className="h-28 rounded-2xl" />
           ))}
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
           <Skeleton className="h-96 rounded-2xl" />
           <Skeleton className="h-96 rounded-2xl" />
         </div>
@@ -182,7 +175,6 @@ export default function Dashboard() {
 
       <MonthlyBarChart transactions={allTransactions} />
 
-      {/* Reintegrado: Insights (Conforme seu antigo) */}
       <Insights
         transactions={allTransactions}
         cryptoHoldings={cryptoHoldings}
