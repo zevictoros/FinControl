@@ -11,6 +11,8 @@ import Transactions from "@/pages/Transactions";
 import Reports from "@/pages/Reports";
 import Crypto from "@/pages/Crypto";
 import Settings from "@/pages/Settings";
+import Calculadoras from "@/pages/Calculadoras";
+import MetasCategorias from "@/pages/MetasCategorias";
 import { ThemeProvider } from "@/lib/ThemeContext";
 
 const AuthenticatedApp = () => {
@@ -45,6 +47,8 @@ const AuthenticatedApp = () => {
         <Route path="/transacoes" element={<Transactions />} />
         <Route path="/relatorios" element={<Reports />} />
         <Route path="/cripto" element={<Crypto />} />
+        <Route path="/metas-categorias" element={<MetasCategorias />} />
+        <Route path="/calculadoras" element={<Calculadoras />} />
         <Route path="/configuracoes" element={<Settings />} />
       </Route>
       <Route path="*" element={<PageNotFound />} />

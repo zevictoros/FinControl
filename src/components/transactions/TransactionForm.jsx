@@ -22,14 +22,18 @@ export default function TransactionForm({
   isSubmitting,
 }) {
   const isEditing = !!transaction;
-  const defaultCategory = transaction?.category || "gastos_fixos";
+  const defaultCategory = transaction?.category || "aluguel";
   const [form, setForm] = useState(
     transaction || {
       description: "",
       amount: "",
       category: defaultCategory,
       type: "despesa",
-      date: new Date().toISOString().split("T")[0],
+      date: (() => {
+        const now = new Date();
+        const bsb = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+        return bsb.toISOString().split("T")[0];
+      })(),
       notes: "",
     },
   );
@@ -40,10 +44,8 @@ export default function TransactionForm({
     e.preventDefault();
     const totalAmount = parseFloat(form.amount);
 
-    // Se tipo for investimento, força categoria investimentos
     const category =
       form.type === "investimento" ? "investimentos" : form.category;
-
     const base = { ...form, amount: totalAmount, category };
 
     if (!isEditing && isInstallment && installments > 1) {
@@ -52,18 +54,14 @@ export default function TransactionForm({
       );
       const groupId = `inst_${Date.now()}`;
       const records = [];
-      const startDate = new Date(form.date);
+      const [sy, sm, sd] = form.date.split("-").map(Number);
 
       for (let i = 0; i < installments; i++) {
-        const d = new Date(
-          startDate.getFullYear(),
-          startDate.getMonth() + i,
-          startDate.getDate(),
-        );
+        const d = new Date(sy, sm - 1 + i, sd);
         records.push({
           ...base,
           amount: installmentAmount,
-          date: d.toISOString().split("T")[0],
+          date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`,
           description: `${form.description} (${i + 1}/${installments})`,
           installments_total: installments,
           installment_number: i + 1,
@@ -83,7 +81,7 @@ export default function TransactionForm({
     update("type", v);
     if (v === "investimento") update("category", "investimentos");
     else if (v === "receita") update("category", "salario");
-    else update("category", "gastos_fixos");
+    else update("category", "aluguel");
   };
 
   const totalAmount = parseFloat(form.amount);
@@ -189,7 +187,7 @@ export default function TransactionForm({
           </div>
         </div>
 
-        {/* Parcelamento — só para despesas */}
+        {/* Parcelamento — só para despesas novas */}
         {!isEditing && form.type === "despesa" && (
           <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-3">
             <div className="flex items-center justify-between">

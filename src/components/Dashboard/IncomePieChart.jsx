@@ -1,26 +1,14 @@
-import React, { useMemo } from "react";
-import {
-  PieChart,
-  Pie,
-  Cell,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-} from "recharts";
-import { CATEGORIES, formatCurrency } from "@/lib/categories";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
+import { getAllCategories, formatCurrency } from "@/lib/categories";
 
 const CustomTooltip = ({ active, payload }) => {
   if (active && payload && payload.length) {
+    const data = payload[0];
     return (
-      <div className="bg-card border border-border rounded-xl px-4 py-3 shadow-lg">
-        <p className="text-sm font-semibold mb-1 text-foreground">
-          {payload[0].name}
-        </p>
-        <p
-          className="text-sm font-medium"
-          style={{ color: payload[0].payload.color }}
-        >
-          {formatCurrency(payload[0].value)}
+      <div className="bg-card border border-border rounded-xl px-4 py-2.5 shadow-lg">
+        <p className="text-sm font-semibold text-foreground">{data.name}</p>
+        <p className="text-sm text-muted-foreground">
+          {formatCurrency(data.value)}
         </p>
       </div>
     );
@@ -28,33 +16,28 @@ const CustomTooltip = ({ active, payload }) => {
   return null;
 };
 
-export default function IncomePieChart({ transactions = [] }) {
-  const chartData = useMemo(() => {
-    const totals = {};
+export default function IncomePieChart({ transactions }) {
+  const CATEGORIES = getAllCategories();
+  const receitas = transactions.filter((t) => t.type === "receita");
 
-    // Filtra apenas o que é receita
-    const incomeTransactions = transactions.filter((t) => t.type === "receita");
+  const categoryTotals = {};
+  receitas.forEach((t) => {
+    categoryTotals[t.category] = (categoryTotals[t.category] || 0) + t.amount;
+  });
 
-    incomeTransactions.forEach((t) => {
-      const category = t.category || "Outros";
-      const amount = Number(t.amount) || 0; // Conversão crucial para número
-      totals[category] = (totals[category] || 0) + amount;
-    });
-
-    return Object.entries(totals)
-      .map(([key, value]) => ({
-        name: CATEGORIES[key]?.label || key,
-        value,
-        color: CATEGORIES[key]?.color || "#10b981", // Usa cor da categoria ou verde padrão
-      }))
-      .sort((a, b) => b.value - a.value); // Ordena do maior para o menor
-  }, [transactions]);
+  const chartData = Object.entries(categoryTotals)
+    .map(([key, value]) => ({
+      name: CATEGORIES[key]?.label || key,
+      value,
+      color: CATEGORIES[key]?.color || "#10b981",
+    }))
+    .sort((a, b) => b.value - a.value);
 
   if (chartData.length === 0) {
     return (
       <div className="bg-card rounded-2xl border border-border p-6 shadow-sm">
         <h3 className="text-base font-semibold mb-4">Receitas por Categoria</h3>
-        <div className="h-64 flex items-center justify-center text-muted-foreground text-sm border-2 border-dashed rounded-xl">
+        <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">
           Nenhuma receita neste período
         </div>
       </div>
@@ -63,9 +46,7 @@ export default function IncomePieChart({ transactions = [] }) {
 
   return (
     <div className="bg-card rounded-2xl border border-border p-6 shadow-sm">
-      <h3 className="text-base font-semibold mb-4 text-foreground/80">
-        Receitas por Categoria
-      </h3>
+      <h3 className="text-base font-semibold mb-4">Receitas por Categoria</h3>
       <div className="h-64">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
@@ -74,24 +55,32 @@ export default function IncomePieChart({ transactions = [] }) {
               cx="50%"
               cy="50%"
               innerRadius={60}
-              outerRadius={80}
-              paddingAngle={5}
+              outerRadius={95}
+              paddingAngle={3}
               dataKey="value"
               stroke="none"
             >
-              {chartData.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={entry.color} />
+              {chartData.map((entry, idx) => (
+                <Cell key={idx} fill={entry.color} />
               ))}
             </Pie>
             <Tooltip content={<CustomTooltip />} />
-            <Legend
-              verticalAlign="bottom"
-              height={36}
-              iconType="circle"
-              wrapperStyle={{ fontSize: "12px", paddingTop: "10px" }}
-            />
           </PieChart>
         </ResponsiveContainer>
+      </div>
+      <div className="grid grid-cols-2 gap-2 mt-4">
+        {chartData.map((item) => (
+          <div key={item.name} className="flex items-center gap-2 text-sm">
+            <div
+              className="w-3 h-3 rounded-full flex-shrink-0"
+              style={{ backgroundColor: item.color }}
+            />
+            <span className="text-muted-foreground truncate">{item.name}</span>
+            <span className="ml-auto font-medium text-foreground">
+              {formatCurrency(item.value)}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { api } from "@/api/apiClient";
+import { api } from "@/api/apiClient"; // Migrado para o seu apiClient (Neon)
 import { useQuery } from "@tanstack/react-query";
 import {
   Select,
@@ -9,6 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   BarChart,
@@ -26,20 +27,13 @@ import {
   Legend,
 } from "recharts";
 import {
-  CATEGORIES,
-  EXPENSE_CATEGORIES,
+  getAllCategories,
+  getExpenseCategories,
   INCOME_CATEGORIES,
   formatCurrency,
 } from "@/lib/categories";
 import { Skeleton } from "@/components/ui/skeleton";
 import InvestmentReport from "@/components/reports/InvestmentReport";
-
-const MONTHS_OPTIONS = [
-  { value: "3", label: "Últimos 3 meses" },
-  { value: "6", label: "Últimos 6 meses" },
-  { value: "12", label: "Últimos 12 meses" },
-  { value: "24", label: "Últimos 24 meses" },
-];
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (active && payload && payload.length) {
@@ -57,11 +51,36 @@ const CustomTooltip = ({ active, payload, label }) => {
   return null;
 };
 
+// Funções auxiliares para manipulação de datas
+function getPastMonths(n) {
+  const now = new Date();
+  const months = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push({ year: d.getFullYear(), month: d.getMonth() });
+  }
+  return months;
+}
+
+function monthKey(year, month) {
+  return `${year}-${String(month + 1).padStart(2, "0")}`;
+}
+
 export default function Reports() {
-  const [months, setMonths] = useState("6");
+  const now = new Date();
+  const [periodMode, setPeriodMode] = useState("preset");
+  const [presetMonths, setPresetMonths] = useState("6");
+  const [customStart, setCustomStart] = useState(() => {
+    const d = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [customEnd, setCustomEnd] = useState(
+    () => `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`,
+  );
   const [filterType, setFilterType] = useState("all");
   const [filterCategory, setFilterCategory] = useState("all");
 
+  // Query atualizada para o seu Backend Neon
   const { data: allTransactions = [], isLoading } = useQuery({
     queryKey: ["transactions"],
     queryFn: async () => {
@@ -70,76 +89,96 @@ export default function Reports() {
     },
   });
 
-  // Cálculo do período de corte (cutoff)
-  const cutoff = useMemo(() => {
-    const d = new Date();
-    d.setMonth(d.getMonth() - parseInt(months));
-    d.setDate(1);
-    d.setHours(0, 0, 0, 0);
-    return d;
-  }, [months]);
+  const validMonths = useMemo(() => {
+    const currentKey = monthKey(now.getFullYear(), now.getMonth());
+    if (periodMode === "preset") {
+      return getPastMonths(parseInt(presetMonths));
+    } else {
+      const [sy, sm] = customStart.split("-").map(Number);
+      const [ey, em] = customEnd.split("-").map(Number);
+      const endKey = monthKey(ey, em - 1);
 
-  // Filtro principal com correção de fuso e valores numéricos
+      const months = [];
+      let y = sy,
+        m = sm - 1;
+      while (monthKey(y, m) <= endKey && monthKey(y, m) <= currentKey) {
+        months.push({ year: y, month: m });
+        m++;
+        if (m > 11) {
+          m = 0;
+          y++;
+        }
+        if (months.length > 60) break; // Trava de segurança
+      }
+      return months;
+    }
+  }, [periodMode, presetMonths, customStart, customEnd]);
+
+  const validMonthKeys = useMemo(
+    () => new Set(validMonths.map((v) => monthKey(v.year, v.month))),
+    [validMonths],
+  );
+
   const filtered = useMemo(() => {
     return allTransactions.filter((t) => {
-      const d = new Date(t.date);
-      if (d < cutoff) return false;
+      // Forçamos o fuso horário local ao processar a string da data
+      const d = new Date(t.date + "T12:00:00");
+      const key = monthKey(d.getFullYear(), d.getMonth());
+      if (!validMonthKeys.has(key)) return false;
       if (filterType !== "all" && t.type !== filterType) return false;
       if (filterCategory !== "all" && t.category !== filterCategory)
         return false;
       return true;
     });
-  }, [allTransactions, cutoff, filterType, filterCategory]);
+  }, [allTransactions, validMonthKeys, filterType, filterCategory]);
 
-  // Processamento para Gráfico de Evolução (Correção de Fuso e NaN)
   const monthlyData = useMemo(() => {
     const map = {};
-    filtered.forEach((t) => {
-      // Extração de data via string para evitar erros de UTC
-      const [year, month] = t.date.split("T")[0].split("-");
-      const key = `${year}-${month}`;
-      const amount = Number(t.amount) || 0;
+    validMonths.forEach(({ year, month }) => {
+      const key = monthKey(year, month);
+      map[key] = {
+        label: new Date(year, month).toLocaleDateString("pt-BR", {
+          month: "short",
+          year: "2-digit",
+        }),
+        receita: 0,
+        despesa: 0,
+        investimento: 0,
+      };
+    });
 
-      if (!map[key]) {
-        const dateObj = new Date(parseInt(year), parseInt(month) - 1, 1);
-        map[key] = {
-          label: dateObj.toLocaleDateString("pt-BR", {
-            month: "short",
-            year: "2-digit",
-          }),
-          receita: 0,
-          despesa: 0,
-          investimento: 0,
-          sortKey: key,
-        };
+    filtered.forEach((t) => {
+      const d = new Date(t.date + "T12:00:00");
+      const key = monthKey(d.getFullYear(), d.getMonth());
+      const amount = Number(t.amount) || 0; // Garantia de valor numérico
+      if (map[key]) {
+        if (t.type === "receita") map[key].receita += amount;
+        else if (t.type === "despesa") map[key].despesa += amount;
+        else if (t.type === "investimento") map[key].investimento += amount;
       }
-      if (t.type === "receita") map[key].receita += amount;
-      else if (t.type === "despesa") map[key].despesa += amount;
-      else if (t.type === "investimento") map[key].investimento += amount;
     });
 
-    return Object.values(map).sort((a, b) =>
-      a.sortKey.localeCompare(b.sortKey),
-    );
-  }, [filtered]);
+    return Object.values(map);
+  }, [filtered, validMonths]);
 
-  // Processamento para Gráfico de Pizza (Correção de NaN)
-  const categoryData = useMemo(() => {
+  const allCategories = useMemo(() => getAllCategories(), []);
+
+  // Processamento de dados para Pizza de Despesas
+  const expenseCategoryData = useMemo(() => {
     const map = {};
-    filtered.forEach((t) => {
-      const key = t.category;
-      const amount = Number(t.amount) || 0;
-      map[key] = (map[key] || 0) + amount;
-    });
-
+    filtered
+      .filter((t) => t.type === "despesa")
+      .forEach((t) => {
+        map[t.category] = (map[t.category] || 0) + (Number(t.amount) || 0);
+      });
     return Object.entries(map)
       .map(([key, value]) => ({
-        name: CATEGORIES[key]?.label || key,
+        name: allCategories[key]?.label || key,
         value,
-        color: CATEGORIES[key]?.color || "#64748b",
+        color: allCategories[key]?.color || "#64748b",
       }))
       .sort((a, b) => b.value - a.value);
-  }, [filtered]);
+  }, [filtered, allCategories]);
 
   const totals = useMemo(
     () => ({
@@ -158,14 +197,9 @@ export default function Reports() {
 
   if (isLoading)
     return (
-      <div className="space-y-4 pt-4">
-        <Skeleton className="h-10 w-48" />
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {[...Array(3)].map((_, i) => (
-            <Skeleton key={i} className="h-32 rounded-2xl" />
-          ))}
-        </div>
-        <Skeleton className="h-[400px] rounded-2xl" />
+      <div className="p-8 space-y-4">
+        <Skeleton className="h-48 w-full" />
+        <Skeleton className="h-48 w-full" />
       </div>
     );
 
@@ -173,132 +207,115 @@ export default function Reports() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Relatórios</h1>
-        <p className="text-muted-foreground text-sm mt-1">
-          Analise suas finanças com filtros e gráficos dinâmicos
+        <p className="text-muted-foreground text-sm">
+          Visão detalhada do seu fluxo financeiro
         </p>
       </div>
 
       <Tabs defaultValue="transactions">
-        <TabsList className="mb-4 bg-muted/50 p-1">
+        <TabsList className="mb-4">
           <TabsTrigger value="transactions">Transações</TabsTrigger>
           <TabsTrigger value="investments">Investimentos</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="transactions" className="space-y-6 outline-none">
-          {/* Filtros */}
-          <div className="bg-card rounded-2xl border border-border p-5 shadow-sm">
-            <h3 className="text-sm font-semibold mb-4">Configurar Relatório</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <TabsContent value="transactions" className="space-y-6">
+          {/* Painel de Filtros */}
+          <div className="bg-card rounded-2xl border border-border p-5 shadow-sm grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="space-y-2">
+              <Label>Modo</Label>
+              <Select value={periodMode} onValueChange={setPeriodMode}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="preset">Pré-definido</SelectItem>
+                  <SelectItem value="custom">Personalizado</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {periodMode === "preset" ? (
               <div className="space-y-2">
-                <Label className="text-xs uppercase text-muted-foreground font-bold">
-                  Período
-                </Label>
-                <Select value={months} onValueChange={setMonths}>
-                  <SelectTrigger className="bg-background">
+                <Label>Período</Label>
+                <Select value={presetMonths} onValueChange={setPresetMonths}>
+                  <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {MONTHS_OPTIONS.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>
-                        {o.label}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="3">3 Meses</SelectItem>
+                    <SelectItem value="6">6 Meses</SelectItem>
+                    <SelectItem value="12">12 Meses</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label className="text-xs uppercase text-muted-foreground font-bold">
-                  Tipo
-                </Label>
-                <Select
-                  value={filterType}
-                  onValueChange={(v) => {
-                    setFilterType(v);
-                    setFilterCategory("all");
-                  }}
-                >
-                  <SelectTrigger className="bg-background">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos os tipos</SelectItem>
-                    <SelectItem value="receita">Receitas</SelectItem>
-                    <SelectItem value="despesa">Despesas</SelectItem>
-                    <SelectItem value="investimento">Investimentos</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs uppercase text-muted-foreground font-bold">
-                  Categoria
-                </Label>
-                <Select
-                  value={filterCategory}
-                  onValueChange={setFilterCategory}
-                >
-                  <SelectTrigger className="bg-background">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todas as categorias</SelectItem>
-                    {(filterType === "all" ||
-                      filterType === "investimento") && (
-                      <SelectItem value="investimentos">
-                        Investimentos
-                      </SelectItem>
-                    )}
-                    {(filterType === "all" || filterType === "despesa") &&
-                      Object.entries(EXPENSE_CATEGORIES).map(([k, v]) => (
-                        <SelectItem key={k} value={k}>
-                          {v.label}
-                        </SelectItem>
-                      ))}
-                    {(filterType === "all" || filterType === "receita") &&
-                      Object.entries(INCOME_CATEGORIES).map(([k, v]) => (
-                        <SelectItem key={k} value={k}>
-                          {v.label}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-              </div>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <Label>Início</Label>
+                  <Input
+                    type="month"
+                    value={customStart}
+                    onChange={(e) => setCustomStart(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Fim</Label>
+                  <Input
+                    type="month"
+                    value={customEnd}
+                    onChange={(e) => setCustomEnd(e.target.value)}
+                  />
+                </div>
+              </>
+            )}
+
+            <div className="space-y-2">
+              <Label>Tipo</Label>
+              <Select
+                value={filterType}
+                onValueChange={(v) => {
+                  setFilterType(v);
+                  setFilterCategory("all");
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="receita">Receitas</SelectItem>
+                  <SelectItem value="despesa">Despesas</SelectItem>
+                  <SelectItem value="investimento">Investimentos</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
           {/* Cards de Resumo */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-card rounded-2xl border border-border p-5 shadow-sm">
-              <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest mb-1">
-                Receitas
-              </p>
-              <p className="text-xl font-bold text-emerald-500">
-                {formatCurrency(totals.receitas)}
-              </p>
-            </div>
-            <div className="bg-card rounded-2xl border border-border p-5 shadow-sm">
-              <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest mb-1">
-                Despesas
-              </p>
-              <p className="text-xl font-bold text-red-500">
-                {formatCurrency(totals.despesas)}
-              </p>
-            </div>
-            <div className="bg-card rounded-2xl border border-border p-5 shadow-sm">
-              <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest mb-1">
-                Investimentos
-              </p>
-              <p className="text-xl font-bold text-violet-500">
-                {formatCurrency(totals.investimentos)}
-              </p>
-            </div>
+            <SummaryCard
+              title="Receitas"
+              value={totals.receitas}
+              color="text-emerald-500"
+            />
+            <SummaryCard
+              title="Despesas"
+              value={totals.despesas}
+              color="text-red-500"
+            />
+            <SummaryCard
+              title="Investimentos"
+              value={totals.investimentos}
+              color="text-violet-500"
+            />
           </div>
 
-          {/* Gráfico de Evolução */}
+          {/* Gráfico de Barras */}
           <div className="bg-card rounded-2xl border border-border p-6 shadow-sm">
-            <h3 className="font-semibold mb-6 text-sm">Evolução Mensal</h3>
+            <h3 className="font-semibold mb-6">Evolução Mensal</h3>
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={monthlyData} barGap={4}>
+                <BarChart data={monthlyData}>
                   <CartesianGrid
                     strokeDasharray="3 3"
                     vertical={false}
@@ -308,29 +325,22 @@ export default function Reports() {
                     dataKey="label"
                     axisLine={false}
                     tickLine={false}
-                    tick={{ fontSize: 11 }}
+                    tick={{ fontSize: 12 }}
                   />
                   <YAxis
                     axisLine={false}
                     tickLine={false}
-                    tick={{ fontSize: 11 }}
-                    tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`}
+                    tick={{ fontSize: 12 }}
+                    tickFormatter={(v) => `R$${v / 1000}k`}
                   />
-                  <Tooltip
-                    content={<CustomTooltip />}
-                    cursor={{ fill: "hsl(var(--muted)/0.2)" }}
-                  />
-                  <Legend
-                    iconType="circle"
-                    wrapperStyle={{ paddingTop: "20px" }}
-                  />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend iconType="circle" />
                   {(filterType === "all" || filterType === "receita") && (
                     <Bar
                       dataKey="receita"
                       name="Receitas"
                       fill="#10b981"
                       radius={[4, 4, 0, 0]}
-                      barSize={20}
                     />
                   )}
                   {(filterType === "all" || filterType === "despesa") && (
@@ -339,7 +349,6 @@ export default function Reports() {
                       name="Despesas"
                       fill="#ef4444"
                       radius={[4, 4, 0, 0]}
-                      barSize={20}
                     />
                   )}
                   {(filterType === "all" || filterType === "investimento") && (
@@ -348,7 +357,6 @@ export default function Reports() {
                       name="Investimentos"
                       fill="#7c3aed"
                       radius={[4, 4, 0, 0]}
-                      barSize={20}
                     />
                   )}
                 </BarChart>
@@ -356,64 +364,78 @@ export default function Reports() {
             </div>
           </div>
 
-          {/* Gráfico de Pizza */}
-          {categoryData.length > 0 && (
-            <div className="bg-card rounded-2xl border border-border p-6 shadow-sm">
-              <h3 className="font-semibold mb-6 text-sm">
-                Distribuição por Categoria
-              </h3>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
-                <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={categoryData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={60}
-                        outerRadius={90}
-                        paddingAngle={5}
-                        dataKey="value"
-                        stroke="none"
-                      >
-                        {categoryData.map((e, i) => (
-                          <Cell key={i} fill={e.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip formatter={(v) => formatCurrency(v)} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
-                  {categoryData.map((item) => (
-                    <div
-                      key={item.name}
-                      className="flex items-center justify-between p-2 rounded-lg hover:bg-muted/30 transition-colors border border-transparent hover:border-border"
-                    >
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="w-2.5 h-2.5 rounded-full"
-                          style={{ backgroundColor: item.color }}
-                        />
-                        <span className="text-xs text-muted-foreground">
-                          {item.name}
-                        </span>
-                      </div>
-                      <span className="text-xs font-bold">
-                        {formatCurrency(item.value)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+          {/* Seção de Pizza */}
+          {expenseCategoryData.length > 0 && (
+            <CategoryPieSection
+              title="Distribuição de Despesas"
+              data={expenseCategoryData}
+            />
           )}
         </TabsContent>
 
-        <TabsContent value="investments" className="outline-none">
+        <TabsContent value="investments">
           <InvestmentReport transactions={allTransactions} />
         </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+function SummaryCard({ title, value, color }) {
+  return (
+    <div className="bg-card rounded-2xl border border-border p-5 shadow-sm">
+      <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest mb-1">
+        {title}
+      </p>
+      <p className={`text-xl font-bold ${color}`}>{formatCurrency(value)}</p>
+    </div>
+  );
+}
+
+function CategoryPieSection({ title, data }) {
+  return (
+    <div className="bg-card rounded-2xl border border-border p-6 shadow-sm">
+      <h3 className="font-semibold mb-6">{title}</h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+        <div className="h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={data}
+                innerRadius={60}
+                outerRadius={80}
+                paddingAngle={5}
+                dataKey="value"
+                stroke="none"
+              >
+                {data.map((entry, index) => (
+                  <Cell key={index} fill={entry.color} />
+                ))}
+              </Pie>
+              <Tooltip formatter={(v) => formatCurrency(v)} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="space-y-3">
+          {data.slice(0, 6).map((item) => (
+            <div
+              key={item.name}
+              className="flex items-center justify-between text-sm"
+            >
+              <div className="flex items-center gap-2">
+                <div
+                  className="w-2 h-2 rounded-full"
+                  style={{ backgroundColor: item.color }}
+                />
+                <span className="text-muted-foreground">{item.name}</span>
+              </div>
+              <span className="font-semibold">
+                {formatCurrency(item.value)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
