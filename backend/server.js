@@ -27,9 +27,6 @@ app.get("/categories", async (req, res) => {
 app.post("/categories", async (req, res) => {
   try {
     const { name, label, color, type, is_deleted } = req.body;
-    if (!name || !type)
-      return res.status(400).json({ error: "Name e Type são obrigatórios" });
-
     const query = `
       INSERT INTO categories (user_id, name, label, color, type, is_deleted)
       VALUES (1, $1, $2, $3, $4, $5)
@@ -37,7 +34,6 @@ app.post("/categories", async (req, res) => {
       DO UPDATE SET label = EXCLUDED.label, color = EXCLUDED.color, is_deleted = EXCLUDED.is_deleted
       RETURNING *
     `;
-
     const result = await db.query(query, [
       name,
       label || name,
@@ -54,17 +50,16 @@ app.post("/categories", async (req, res) => {
 
 app.delete("/categories/:id", async (req, res) => {
   try {
-    const result = await db.query(
-      "DELETE FROM categories WHERE id = $1 AND user_id = 1",
-      [req.params.id],
-    );
+    await db.query("DELETE FROM categories WHERE id = $1 AND user_id = 1", [
+      req.params.id,
+    ]);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: "Erro ao remover categoria." });
   }
 });
 
-// --- TRANSAÇÕES (CORRIGIDO) ---
+// --- TRANSAÇÕES ---
 
 app.get("/transactions", async (req, res) => {
   try {
@@ -80,32 +75,22 @@ app.get("/transactions", async (req, res) => {
 app.post("/transactions", async (req, res) => {
   try {
     const { description, amount, category, type, date, notes } = req.body;
-
-    // Tratamento de dados para evitar erro de nulo ou tipo
-    const cleanAmount = parseFloat(amount) || 0;
-    const cleanDate = date || new Date().toISOString().split("T")[0];
-    const cleanCategory = category || "Outros";
-
     const query = `
       INSERT INTO transactions (user_id, description, amount, category, type, date, notes)
-      VALUES (1, $1, $2, $3, $4, $5, $6)
-      RETURNING *
+      VALUES (1, $1, $2, $3, $4, $5, $6) RETURNING *
     `;
-
     const result = await db.query(query, [
       description || "Sem descrição",
-      cleanAmount,
-      cleanCategory,
+      parseFloat(amount) || 0,
+      category || "Outros",
       type || "despesa",
-      cleanDate,
+      date || new Date().toISOString().split("T")[0],
       notes || "",
     ]);
-
     res.json(result.rows[0]);
   } catch (err) {
-    // ESSA LINHA VAI TE DIZER O ERRO EXATO NO CONSOLE DO RENDER
-    console.error("❌ ERRO REAL DO BANCO:", err.message);
-    res.status(500).json({ error: "Falha no banco: " + err.message });
+    console.error("Erro POST /transactions:", err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -117,7 +102,7 @@ app.put("/transactions/:id", async (req, res) => {
       SET description=$1, amount=$2, category=$3, type=$4, date=$5, notes=$6
       WHERE id=$7 RETURNING *
     `;
-    const result = await db.query(query, [
+    await db.query(query, [
       description,
       parseFloat(amount),
       category,
@@ -126,9 +111,9 @@ app.put("/transactions/:id", async (req, res) => {
       notes,
       req.params.id,
     ]);
-    res.json(result.rows[0]);
+    res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: "Erro ao atualizar." });
+    res.status(500).json({ error: "Erro ao atualizar transação." });
   }
 });
 
@@ -137,35 +122,11 @@ app.delete("/transactions/:id", async (req, res) => {
     await db.query("DELETE FROM transactions WHERE id=$1", [req.params.id]);
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: "Erro ao deletar." });
+    res.status(500).json({ error: "Erro ao deletar transação." });
   }
 });
 
-// --- CONFIGURAÇÕES & CRYPTO ---
-
-app.get("/settings", async (req, res) => {
-  try {
-    const result = await db.query(
-      "SELECT carry_balance FROM user_settings WHERE user_id = 1",
-    );
-    res.json(result.rows[0] || { carry_balance: false });
-  } catch (err) {
-    res.status(500).json({ error: "Erro ao buscar settings." });
-  }
-});
-
-app.post("/settings", async (req, res) => {
-  try {
-    const { carry_balance } = req.body;
-    await db.query(
-      "INSERT INTO user_settings (user_id, carry_balance) VALUES (1, $1) ON CONFLICT (user_id) DO UPDATE SET carry_balance = EXCLUDED.carry_balance",
-      [!!carry_balance],
-    );
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: "Erro ao salvar settings." });
-  }
-});
+// --- CRYPTO HOLDINGS (AGORA COM EDITAR) ---
 
 app.get("/crypto-holdings", async (req, res) => {
   try {
@@ -188,6 +149,59 @@ app.post("/crypto-holdings", async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Rota de EDIÇÃO de Cripto
+app.put("/crypto-holdings/:id", async (req, res) => {
+  try {
+    const { symbol, amount } = req.body;
+    const { id } = req.params;
+    const result = await db.query(
+      "UPDATE crypto_holdings SET symbol = $1, amount = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3 RETURNING *",
+      [symbol.toUpperCase(), parseFloat(amount), id],
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error("Erro PUT crypto:", err.message);
+    res.status(500).json({ error: "Erro ao atualizar moeda." });
+  }
+});
+
+app.delete("/crypto-holdings/:id", async (req, res) => {
+  try {
+    await db.query("DELETE FROM crypto_holdings WHERE id = $1", [
+      req.params.id,
+    ]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Erro ao deletar moeda." });
+  }
+});
+
+// --- SETTINGS ---
+
+app.get("/settings", async (req, res) => {
+  try {
+    const result = await db.query(
+      "SELECT carry_balance FROM user_settings WHERE user_id = 1",
+    );
+    res.json(result.rows[0] || { carry_balance: false });
+  } catch (err) {
+    res.status(500).json({ error: "Erro ao buscar settings." });
+  }
+});
+
+app.post("/settings", async (req, res) => {
+  try {
+    const { carry_balance } = req.body;
+    await db.query(
+      "INSERT INTO user_settings (user_id, carry_balance) VALUES (1, $1) ON CONFLICT (user_id) DO UPDATE SET carry_balance = EXCLUDED.carry_balance",
+      [!!carry_balance],
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Erro ao salvar settings." });
   }
 });
 
