@@ -1,36 +1,32 @@
-require('dotenv').config(); // Instale com: npm install dotenv
+require("dotenv").config();
 const { Pool } = require("pg");
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {
-    rejectUnauthorized: false, // Obrigatório para o Neon.tech
+    rejectUnauthorized: false, // Obrigatório para Neon.tech
   },
 });
 
-/**
- * Inicialização do Banco de Dados
- * Cria as tabelas necessárias caso não existam.
- */
 const initDb = async () => {
   let client;
   try {
     client = await pool.connect();
     console.log("🚀 Conectado ao Neon.tech com sucesso!");
 
-    // 1. Tabela de Usuários (necessária para Auth e Roles)
+    // 1. Usuários
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
         name TEXT NOT NULL,
         email TEXT UNIQUE NOT NULL,
         password TEXT NOT NULL,
-        role TEXT DEFAULT 'user', -- 'admin' ou 'user'
+        role TEXT DEFAULT 'user',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
 
-    // 2. Tabela de Configurações (usada no componente Settings)
+    // 2. Configurações
     await client.query(`
       CREATE TABLE IF NOT EXISTS user_settings (
         user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
@@ -39,22 +35,46 @@ const initDb = async () => {
       );
     `);
 
-    // 3. Tabela de Transações (atualizada com user_id)
+    // 3. Categorias (NOVA TABELA)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS categories (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER DEFAULT 1, -- Ajustar quando tiver Auth real
+        name TEXT NOT NULL,
+        label TEXT NOT NULL,
+        color TEXT NOT NULL,
+        type TEXT NOT NULL, -- 'despesa' ou 'receita'
+        is_deleted BOOLEAN DEFAULT FALSE,
+        UNIQUE(user_id, name, type)
+      );
+    `);
+
+    // 4. Transações
     await client.query(`
       CREATE TABLE IF NOT EXISTS transactions (
         id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        user_id INTEGER DEFAULT 1,
         description TEXT NOT NULL,
         amount DECIMAL(10,2) NOT NULL,
         category TEXT NOT NULL,
-        type TEXT NOT NULL DEFAULT 'despesa', -- 'receita', 'despesa', 'investimento'
+        type TEXT NOT NULL DEFAULT 'despesa',
         date DATE NOT NULL,
         notes TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
 
-    console.log("✅ Tabelas verificadas/criadas com sucesso.");
+    // 5. Crypto Holdings
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS crypto_holdings (
+        id SERIAL PRIMARY KEY,
+        symbol TEXT UNIQUE NOT NULL,
+        amount DECIMAL(20,8) NOT NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    console.log("✅ Banco de dados sincronizado.");
   } catch (err) {
     console.error("❌ Erro na inicialização do DB:", err.message);
   } finally {
@@ -62,12 +82,9 @@ const initDb = async () => {
   }
 };
 
-// Executa a inicialização
 initDb();
 
 module.exports = {
-  // Helper para queries simples
   query: (text, params) => pool.query(text, params),
-  // Exporta o pool caso precise de funções mais complexas (como transações)
   pool,
 };
