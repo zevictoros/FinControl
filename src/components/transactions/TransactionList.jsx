@@ -10,8 +10,30 @@ import {
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 
-export default function TransactionList({ transactions, onEdit, onDelete }) {
+export default function TransactionList({
+  transactions = [],
+  onEdit,
+  onDelete,
+}) {
   const CATEGORIES = getAllCategories();
+
+  // Função interna para formatar a data sem erros de "Invalid Date" ou fuso horário
+  const formatDateSafe = (dateString) => {
+    if (!dateString) return "Data pendente";
+
+    try {
+      // Pega apenas a parte YYYY-MM-DD (ignora horários se houver)
+      const pureDate = dateString.split("T")[0];
+      const [year, month, day] = pureDate.split("-");
+
+      // Se não tiver os 3 componentes, tenta o formato brasileiro (caso venha trocado)
+      if (!year || !month || !day) return dateString;
+
+      return `${day}/${month}/${year}`;
+    } catch (err) {
+      return "Data inválida";
+    }
+  };
 
   if (transactions.length === 0) {
     return (
@@ -82,13 +104,11 @@ export default function TransactionList({ transactions, onEdit, onDelete }) {
                     {catLabel}
                   </span>
                   <span className="text-xs text-muted-foreground">
-                    {new Date(t.date + "T12:00:00-03:00").toLocaleDateString(
-                      "pt-BR",
-                    )}
+                    {formatDateSafe(t.date)}
                   </span>
                   {t.notes && (
-                    <span className="text-xs text-muted-foreground truncate hidden sm:inline">
-                      {t.notes}
+                    <span className="text-xs text-muted-foreground truncate hidden sm:inline max-w-[150px]">
+                      • {t.notes}
                     </span>
                   )}
                 </div>
@@ -100,7 +120,7 @@ export default function TransactionList({ transactions, onEdit, onDelete }) {
                   className={`text-sm font-bold ${amountColor} whitespace-nowrap mr-1`}
                 >
                   {amountPrefix}
-                  {formatCurrency(t.amount)}
+                  {formatCurrency(Number(t.amount) || 0)}
                 </span>
                 <Button
                   variant="ghost"
@@ -113,7 +133,7 @@ export default function TransactionList({ transactions, onEdit, onDelete }) {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 text-destructive hover:text-destructive"
+                  className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
                   onClick={() => onDelete(t.id)}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
