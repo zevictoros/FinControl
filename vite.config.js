@@ -1,6 +1,6 @@
-import { defineConfig } from "vite";
-import react from "@vitejs/react-swc";
-import path from "path";
+import { defineConfig } from 'vite'
+import react from '@vitejs/react-swc'
+import path from 'path'
 
 export default defineConfig({
   plugins: [react()],
@@ -10,7 +10,18 @@ export default defineConfig({
     },
   },
   build: {
-    sourcemap: false, // Isso acelera muito o build e evita travamentos
-    chunkSizeWarningLimit: 1600,
+    // Desativa source maps para economizar memória
+    sourcemap: false,
+    // Aumenta o limite de chunks
+    chunkSizeWarningLimit: 2000,
+    // Força a limpeza de cache do rollup
+    rollupOptions: {
+      cache: false,
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'recharts'],
+        },
+      },
+    },
   },
-});
+})

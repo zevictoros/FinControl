@@ -38,7 +38,6 @@ export default function MetasCategorias() {
 
   const expenseCategories = useMemo(() => getExpenseCategories(), [catVersion]);
 
-  // Investimento sempre no topo, depois despesas
   const categoryList = useMemo(
     () => [
       INVESTMENT_ITEM,
@@ -62,7 +61,6 @@ export default function MetasCategorias() {
     [goals],
   );
 
-  // Sempre salva como number
   const handleChange = (key, value) => {
     const num = Math.min(100, Math.max(0, Number(value) || 0));
     setGoals((prev) => ({ ...prev, [key]: num }));
@@ -70,7 +68,6 @@ export default function MetasCategorias() {
 
   const handleSave = () => {
     if (totalGoalPercent > 100) return;
-    // Garante que todos os valores são number ao persistir
     const toSave = Object.fromEntries(
       Object.entries(goals).map(([k, v]) => [k, Number(v) || 0]),
     );
@@ -96,10 +93,10 @@ export default function MetasCategorias() {
       ? [
           ...pieData,
           ...(remaining > 0
-            ? [{ name: "Livre", value: remaining, color: "hsl(var(--border))" }]
+            ? [{ name: "Livre", value: remaining, color: "#e2e8f0" }]
             : []),
         ]
-      : [{ name: "Sem metas", value: 100, color: "hsl(var(--border))" }];
+      : [{ name: "Sem metas", value: 100, color: "#e2e8f0" }];
 
   return (
     <div className="space-y-6">
@@ -109,15 +106,13 @@ export default function MetasCategorias() {
             Metas por Categoria
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Defina qual % da receita vai para cada categoria (despesas +
-            investimentos)
+            Defina a % da receita para cada categoria
           </p>
         </div>
         <div className="flex items-center gap-3">
           {saved && (
             <div className="flex items-center gap-1.5 text-emerald-500 text-sm font-medium">
-              <CheckCircle2 className="w-4 h-4" />
-              Salvo!
+              <CheckCircle2 className="w-4 h-4" /> Salvo!
             </div>
           )}
           <Button
@@ -125,117 +120,47 @@ export default function MetasCategorias() {
             disabled={isOver}
             variant={isOver ? "destructive" : "default"}
           >
-            <Save className="w-4 h-4 mr-2" />
-            Salvar metas
+            <Save className="w-4 h-4 mr-2" /> Salvar metas
           </Button>
         </div>
       </div>
 
       {isOver && (
-        <div className="flex items-center gap-2 bg-destructive/10 border border-destructive/20 rounded-xl px-4 py-2.5 text-sm text-destructive font-medium">
-          <span className="flex-shrink-0">⚠️</span>
-          <span>
-            Total de {totalGoalPercent.toFixed(1)}% ultrapassa 100%. Reduza os
-            valores antes de salvar.
-          </span>
+        <div className="bg-destructive/10 border border-destructive/20 rounded-xl px-4 py-2.5 text-sm text-destructive font-medium">
+          ⚠️ Total de {totalGoalPercent.toFixed(1)}% ultrapassa 100%.
         </div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-        {/* Pizza */}
         <div className="lg:col-span-2 bg-card rounded-2xl border border-border p-6 shadow-sm">
-          <h3 className="font-semibold mb-1">Distribuição</h3>
-          <p className="text-xs text-muted-foreground mb-3">
-            Alocado:{" "}
-            <span
-              className={cn(
-                "font-bold",
-                isOver ? "text-destructive" : "text-foreground",
-              )}
-            >
-              {totalGoalPercent.toFixed(1)}%
-            </span>
-            {remaining > 0 && <span> · Livre: {remaining.toFixed(1)}%</span>}
-          </p>
-          <div className="h-52">
+          <h3 className="font-semibold mb-4">Distribuição</h3>
+          <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
                   data={pieDataFull}
                   cx="50%"
                   cy="50%"
-                  outerRadius={90}
+                  outerRadius={80}
                   dataKey="value"
                   stroke="none"
-                  label={({
-                    value,
-                    cx,
-                    cy,
-                    midAngle,
-                    innerRadius,
-                    outerRadius,
-                  }) => {
-                    if (value < 5) return null;
-                    const R = Math.PI / 180;
-                    const radius =
-                      innerRadius + (outerRadius - innerRadius) * 0.5;
-                    const x = cx + radius * Math.cos(-midAngle * R);
-                    const y = cy + radius * Math.sin(-midAngle * R);
-                    return (
-                      <text
-                        x={x}
-                        y={y}
-                        fill="white"
-                        textAnchor="middle"
-                        dominantBaseline="central"
-                        fontSize={11}
-                        fontWeight={600}
-                      >
-                        {value.toFixed(0)}%
-                      </text>
-                    );
-                  }}
-                  labelLine={false}
                 >
                   {pieDataFull.map((entry, i) => (
-                    <Cell key={i} fill={entry.color} />
+                    <Cell key={`cell-${i}`} fill={entry.color} />
                   ))}
                 </Pie>
-                <Tooltip
-                  formatter={(v, name) => [`${v.toFixed(1)}%`, name]}
-                  contentStyle={{
-                    backgroundColor: "hsl(var(--card))",
-                    border: "1px solid hsl(var(--border))",
-                    color: "hsl(var(--foreground))",
-                    borderRadius: 12,
-                  }}
-                />
+                <Tooltip />
               </PieChart>
             </ResponsiveContainer>
           </div>
-          <div className="space-y-1.5 mt-1">
-            {pieData.map((d) => (
-              <div key={d.key} className="flex items-center gap-2 text-xs">
-                <div
-                  className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: d.color }}
-                />
-                <span className="text-muted-foreground flex-1 truncate">
-                  {d.name}
-                </span>
-                <span className="font-semibold">{d.value.toFixed(1)}%</span>
-              </div>
-            ))}
-          </div>
         </div>
 
-        {/* Sliders */}
         <div className="lg:col-span-3 bg-card rounded-2xl border border-border p-6 shadow-sm space-y-5">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold">Ajuste por Categoria</h3>
             <span
               className={cn(
-                "text-sm font-bold tabular-nums",
+                "text-sm font-bold",
                 isOver ? "text-destructive" : "text-muted-foreground",
               )}
             >
@@ -249,60 +174,30 @@ export default function MetasCategorias() {
               <div key={c.key} className="space-y-2">
                 <div className="flex items-center gap-3">
                   <div
-                    className="w-3 h-3 rounded-full flex-shrink-0"
+                    className="w-3 h-3 rounded-full"
                     style={{ backgroundColor: c.color }}
                   />
                   <span className="text-sm font-medium flex-1 truncate">
                     {c.label}
                   </span>
-                  {c.isInvestment && (
-                    <span className="text-xs bg-violet-500/10 text-violet-600 dark:text-violet-400 rounded px-1.5 py-0.5 font-medium flex-shrink-0">
-                      investimento
-                    </span>
-                  )}
-                  <div className="flex items-center gap-1 bg-secondary rounded-lg px-3 py-1.5 border border-border w-24 flex-shrink-0">
+                  <div className="flex items-center gap-1 bg-secondary rounded-lg px-2 py-1 border border-border w-20">
                     <input
                       type="number"
-                      min="0"
-                      max="100"
-                      step="1"
-                      value={goal === 0 ? "" : String(Math.round(goal))}
+                      value={goal === 0 ? "" : Math.round(goal)}
                       onChange={(e) => handleChange(c.key, e.target.value)}
-                      placeholder="0"
-                      className="w-full text-right text-sm font-bold bg-transparent focus:outline-none tabular-nums"
-                      style={{ color: c.color }}
+                      className="w-full text-right text-sm font-bold bg-transparent focus:outline-none"
                     />
-                    <span className="text-sm text-muted-foreground font-medium">
-                      %
-                    </span>
+                    <span className="text-xs text-muted-foreground">%</span>
                   </div>
                 </div>
-                <div className="relative h-5 flex items-center">
-                  <div className="w-full h-2 bg-border rounded-full overflow-visible relative">
-                    <div
-                      className="h-2 rounded-full transition-all"
-                      style={{ width: `${goal}%`, backgroundColor: c.color }}
-                    />
-                    {goal > 0 && (
-                      <div
-                        className="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full border-2 border-white shadow-md transition-all pointer-events-none"
-                        style={{
-                          left: `calc(${goal}% - 8px)`,
-                          backgroundColor: c.color,
-                        }}
-                      />
-                    )}
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    step="1"
-                    value={goal}
-                    onChange={(e) => handleChange(c.key, e.target.value)}
-                    className="absolute inset-0 w-full opacity-0 cursor-pointer h-5"
-                  />
-                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={goal}
+                  onChange={(e) => handleChange(c.key, e.target.value)}
+                  className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
+                />
               </div>
             );
           })}
