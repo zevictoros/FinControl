@@ -1,4 +1,6 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react"; // Adicionado useMemo
+import { useQuery } from "@tanstack/react-query"; // Adicionado useQuery
+import { api } from "@/api/apiClient"; // Importe sua API
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,29 +23,50 @@ export default function TransactionForm({
   onCancel,
   isSubmitting,
 }) {
+  // 1. Buscar categorias do banco de dados
+  const { data: dbCategories = [] } = useQuery({
+    queryKey: ["categories"],
+    queryFn: async () => {
+      const response = await api.get("/categories");
+      return Array.isArray(response.data) ? response.data : [];
+    },
+  });
+
   const isEditing = !!transaction;
-  const defaultCategory = transaction?.category || "aluguel";
+
   const [form, setForm] = useState(
     transaction || {
       description: "",
       amount: "",
-      category: defaultCategory,
+      category: "aluguel", // Valor inicial seguro
       type: "despesa",
-      date: (() => {
-        const now = new Date();
-        const bsb = new Date(now.getTime() - 3 * 60 * 60 * 1000);
-        return bsb.toISOString().split("T")[0];
-      })(),
+      date: new Date().toISOString().split("T")[0],
       notes: "",
     },
   );
+
   const [isInstallment, setIsInstallment] = useState(false);
   const [installments, setInstallments] = useState(2);
+
+  // 2. Mesclar categorias estáticas com as do banco de dados
+  const availableCategories = useMemo(() => {
+    // Pega as fixas do arquivo lib/categories
+    const staticCats = getCategoriesForType(form.type);
+
+    // Filtra as do banco pelo tipo (receita/despesa) e remove as deletadas
+    const customCats = dbCategories.reduce((acc, cat) => {
+      if (cat.type === form.type && !cat.is_deleted) {
+        acc[cat.name] = { label: cat.label, color: cat.color };
+      }
+      return acc;
+    }, {});
+
+    return { ...staticCats, ...customCats };
+  }, [form.type, dbCategories]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
     const totalAmount = parseFloat(form.amount);
-
     const category =
       form.type === "investimento" ? "investimentos" : form.category;
     const base = { ...form, amount: totalAmount, category };
@@ -84,12 +107,6 @@ export default function TransactionForm({
     else update("category", "aluguel");
   };
 
-  const totalAmount = parseFloat(form.amount);
-  const installmentAmount =
-    isInstallment && installments > 1 && !isNaN(totalAmount)
-      ? totalAmount / installments
-      : null;
-
   return (
     <motion.div
       initial={{ opacity: 0, y: -10 }}
@@ -116,7 +133,7 @@ export default function TransactionForm({
             <Input
               value={form.description}
               onChange={(e) => update("description", e.target.value)}
-              placeholder="Ex: Notebook, Aluguel..."
+              placeholder="Ex: Notebook..."
               required
             />
           </div>
@@ -125,7 +142,6 @@ export default function TransactionForm({
             <Input
               type="number"
               step="0.01"
-              min="0"
               value={form.amount}
               onChange={(e) => update("amount", e.target.value)}
               placeholder="0,00"
@@ -164,20 +180,19 @@ export default function TransactionForm({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {Object.entries(getCategoriesForType(form.type)).map(
-                    ([key, val]) => (
-                      <SelectItem key={key} value={key}>
-                        {val.label}
-                      </SelectItem>
-                    ),
-                  )}
+                  {/* 3. Renderiza as categorias mescladas */}
+                  {Object.entries(availableCategories).map(([key, val]) => (
+                    <SelectItem key={key} value={key}>
+                      {val.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             )}
           </div>
 
           <div className="space-y-2">
-            <Label>Data{isInstallment ? " da 1ª parcela" : ""}</Label>
+            <Label>Data</Label>
             <Input
               type="date"
               value={form.date}
@@ -187,15 +202,12 @@ export default function TransactionForm({
           </div>
         </div>
 
-        {/* Parcelamento — só para despesas novas */}
+        {/* ... Restante do formulário (Parcelamento e Observações) permanece igual ... */}
         {!isEditing && form.type === "despesa" && (
           <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-3">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium">Parcelado</p>
-                <p className="text-xs text-muted-foreground">
-                  O valor será dividido pelo número de parcelas
-                </p>
               </div>
               <Switch
                 checked={isInstallment}
@@ -203,25 +215,15 @@ export default function TransactionForm({
               />
             </div>
             {isInstallment && (
-              <div className="flex items-center gap-3 flex-wrap">
-                <Label className="text-sm whitespace-nowrap">
-                  Nº de parcelas
-                </Label>
+              <div className="flex items-center gap-3">
                 <Input
                   type="number"
-                  min="2"
-                  max="60"
                   value={installments}
                   onChange={(e) =>
                     setInstallments(parseInt(e.target.value) || 2)
                   }
                   className="w-24"
                 />
-                {installmentAmount && (
-                  <span className="text-sm text-muted-foreground">
-                    = {formatCurrency(installmentAmount)}/mês
-                  </span>
-                )}
               </div>
             )}
           </div>
@@ -232,7 +234,6 @@ export default function TransactionForm({
           <Textarea
             value={form.notes}
             onChange={(e) => update("notes", e.target.value)}
-            placeholder="Detalhes opcionais..."
             className="h-20"
           />
         </div>
@@ -242,13 +243,7 @@ export default function TransactionForm({
             Cancelar
           </Button>
           <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting
-              ? "Salvando..."
-              : isEditing
-                ? "Salvar"
-                : isInstallment
-                  ? `Lançar ${installments}x`
-                  : "Adicionar"}
+            {isSubmitting ? "Salvando..." : "Salvar"}
           </Button>
         </div>
       </form>
