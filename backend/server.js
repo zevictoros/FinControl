@@ -12,14 +12,15 @@ app.get("/", (req, res) => {
   res.send("🚀 API FinControl rodando com sucesso no Neon.tech");
 });
 
-// --- CATEGORIAS (NOVO) ---
+// --- CATEGORIAS ---
 
-// Listar categorias customizadas e estados de exclusão
+// Listar categorias
 app.get("/categories", async (req, res) => {
   try {
     const result = await db.query("SELECT * FROM categories WHERE user_id = 1");
     res.json(result.rows || []);
   } catch (err) {
+    console.error("Erro GET /categories:", err.message);
     res.status(500).json({ error: "Erro ao buscar categorias." });
   }
 });
@@ -28,6 +29,12 @@ app.get("/categories", async (req, res) => {
 app.post("/categories", async (req, res) => {
   try {
     const { name, label, color, type, is_deleted } = req.body;
+
+    // Validamos se os campos obrigatórios existem
+    if (!name || !type) {
+      return res.status(400).json({ error: "Name e Type são obrigatórios" });
+    }
+
     const query = `
       INSERT INTO categories (user_id, name, label, color, type, is_deleted)
       VALUES (1, $1, $2, $3, $4, $5)
@@ -38,6 +45,7 @@ app.post("/categories", async (req, res) => {
         is_deleted = EXCLUDED.is_deleted
       RETURNING *
     `;
+
     const result = await db.query(query, [
       name,
       label || name,
@@ -45,19 +53,32 @@ app.post("/categories", async (req, res) => {
       type,
       !!is_deleted,
     ]);
+
     res.json(result.rows[0]);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Erro ao salvar categoria." });
+    console.error("Erro POST /categories:", err.message);
+    res.status(500).json({ error: "Erro ao salvar categoria no banco." });
   }
 });
 
 // Deletar Categoria Customizada
 app.delete("/categories/:id", async (req, res) => {
   try {
-    await db.query("DELETE FROM categories WHERE id = $1", [req.params.id]);
+    const { id } = req.params;
+    const result = await db.query(
+      "DELETE FROM categories WHERE id = $1 AND user_id = 1",
+      [id],
+    );
+
+    if (result.rowCount === 0) {
+      return res
+        .status(404)
+        .json({ error: "Categoria não encontrada ou você não tem permissão." });
+    }
+
     res.json({ success: true });
   } catch (err) {
+    console.error("Erro DELETE /categories:", err.message);
     res.status(500).json({ error: "Erro ao remover categoria." });
   }
 });
@@ -71,6 +92,7 @@ app.get("/transactions", async (req, res) => {
     );
     res.json(result.rows || []);
   } catch (err) {
+    console.error("Erro GET /transactions:", err.message);
     res.status(500).json({ error: "Erro ao buscar transações." });
   }
 });
@@ -96,6 +118,7 @@ app.post("/transactions", async (req, res) => {
     ]);
     res.json(result.rows[0]);
   } catch (err) {
+    console.error("Erro POST /transactions:", err.message);
     res.status(500).json({ error: "Falha ao salvar transação." });
   }
 });
@@ -120,6 +143,7 @@ app.put("/transactions/:id", async (req, res) => {
     ]);
     res.json(result.rows[0]);
   } catch (err) {
+    console.error("Erro PUT /transactions:", err.message);
     res.status(500).json({ error: "Erro ao atualizar." });
   }
 });
@@ -129,6 +153,7 @@ app.delete("/transactions/:id", async (req, res) => {
     await db.query("DELETE FROM transactions WHERE id=$1", [req.params.id]);
     res.json({ success: true });
   } catch (err) {
+    console.error("Erro DELETE /transactions:", err.message);
     res.status(500).json({ error: "Erro ao deletar." });
   }
 });
