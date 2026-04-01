@@ -14,7 +14,6 @@ app.get("/", (req, res) => {
 
 // --- CATEGORIAS ---
 
-// Listar categorias
 app.get("/categories", async (req, res) => {
   try {
     const result = await db.query("SELECT * FROM categories WHERE user_id = 1");
@@ -25,24 +24,17 @@ app.get("/categories", async (req, res) => {
   }
 });
 
-// Criar ou Atualizar (Upsert) Categoria
 app.post("/categories", async (req, res) => {
   try {
     const { name, label, color, type, is_deleted } = req.body;
-
-    // Validamos se os campos obrigatórios existem
-    if (!name || !type) {
+    if (!name || !type)
       return res.status(400).json({ error: "Name e Type são obrigatórios" });
-    }
 
     const query = `
       INSERT INTO categories (user_id, name, label, color, type, is_deleted)
       VALUES (1, $1, $2, $3, $4, $5)
       ON CONFLICT (user_id, name, type) 
-      DO UPDATE SET 
-        label = EXCLUDED.label, 
-        color = EXCLUDED.color, 
-        is_deleted = EXCLUDED.is_deleted
+      DO UPDATE SET label = EXCLUDED.label, color = EXCLUDED.color, is_deleted = EXCLUDED.is_deleted
       RETURNING *
     `;
 
@@ -53,37 +45,26 @@ app.post("/categories", async (req, res) => {
       type,
       !!is_deleted,
     ]);
-
     res.json(result.rows[0]);
   } catch (err) {
     console.error("Erro POST /categories:", err.message);
-    res.status(500).json({ error: "Erro ao salvar categoria no banco." });
+    res.status(500).json({ error: err.message });
   }
 });
 
-// Deletar Categoria Customizada
 app.delete("/categories/:id", async (req, res) => {
   try {
-    const { id } = req.params;
     const result = await db.query(
       "DELETE FROM categories WHERE id = $1 AND user_id = 1",
-      [id],
+      [req.params.id],
     );
-
-    if (result.rowCount === 0) {
-      return res
-        .status(404)
-        .json({ error: "Categoria não encontrada ou você não tem permissão." });
-    }
-
     res.json({ success: true });
   } catch (err) {
-    console.error("Erro DELETE /categories:", err.message);
     res.status(500).json({ error: "Erro ao remover categoria." });
   }
 });
 
-// --- TRANSAÇÕES ---
+// --- TRANSAÇÕES (CORRIGIDO) ---
 
 app.get("/transactions", async (req, res) => {
   try {
@@ -92,7 +73,6 @@ app.get("/transactions", async (req, res) => {
     );
     res.json(result.rows || []);
   } catch (err) {
-    console.error("Erro GET /transactions:", err.message);
     res.status(500).json({ error: "Erro ao buscar transações." });
   }
 });
@@ -100,32 +80,37 @@ app.get("/transactions", async (req, res) => {
 app.post("/transactions", async (req, res) => {
   try {
     const { description, amount, category, type, date, notes } = req.body;
+
+    // Tratamento de dados para evitar erro de nulo ou tipo
     const cleanAmount = parseFloat(amount) || 0;
     const cleanDate = date || new Date().toISOString().split("T")[0];
+    const cleanCategory = category || "Outros";
 
     const query = `
       INSERT INTO transactions (user_id, description, amount, category, type, date, notes)
       VALUES (1, $1, $2, $3, $4, $5, $6)
       RETURNING *
     `;
+
     const result = await db.query(query, [
       description || "Sem descrição",
       cleanAmount,
-      category,
-      type,
+      cleanCategory,
+      type || "despesa",
       cleanDate,
       notes || "",
     ]);
+
     res.json(result.rows[0]);
   } catch (err) {
-    console.error("Erro POST /transactions:", err.message);
-    res.status(500).json({ error: "Falha ao salvar transação." });
+    // ESSA LINHA VAI TE DIZER O ERRO EXATO NO CONSOLE DO RENDER
+    console.error("❌ ERRO REAL DO BANCO:", err.message);
+    res.status(500).json({ error: "Falha no banco: " + err.message });
   }
 });
 
 app.put("/transactions/:id", async (req, res) => {
   try {
-    const { id } = req.params;
     const { description, amount, category, type, date, notes } = req.body;
     const query = `
       UPDATE transactions
@@ -139,11 +124,10 @@ app.put("/transactions/:id", async (req, res) => {
       type,
       date,
       notes,
-      id,
+      req.params.id,
     ]);
     res.json(result.rows[0]);
   } catch (err) {
-    console.error("Erro PUT /transactions:", err.message);
     res.status(500).json({ error: "Erro ao atualizar." });
   }
 });
@@ -153,7 +137,6 @@ app.delete("/transactions/:id", async (req, res) => {
     await db.query("DELETE FROM transactions WHERE id=$1", [req.params.id]);
     res.json({ success: true });
   } catch (err) {
-    console.error("Erro DELETE /transactions:", err.message);
     res.status(500).json({ error: "Erro ao deletar." });
   }
 });
