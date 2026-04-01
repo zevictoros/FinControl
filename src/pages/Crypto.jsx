@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { api } from "@/api/apiClient"; // Migrado para seu novo cliente
+import { api } from "@/api/apiClient";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,7 @@ import { formatCurrency } from "@/lib/categories";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "react-router-dom";
 
+// Lista de referência para IDs da CoinGecko baseada nos símbolos do seu banco
 const POPULAR_COINS = [
   { id: "bitcoin", name: "Bitcoin", symbol: "BTC" },
   { id: "ethereum", name: "Ethereum", symbol: "ETH" },
@@ -42,89 +43,27 @@ async function fetchPrices(coinIds) {
   }
 }
 
-function EditHoldingForm({ holding, onSave, onCancel, isPending }) {
-  const [coinId, setCoinId] = useState(holding.coin_id);
-  const [quantity, setQuantity] = useState(String(holding.quantity));
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    const coin = POPULAR_COINS.find((c) => c.id === coinId) || {
-      id: holding.coin_id,
-      name: holding.coin_name,
-      symbol: holding.coin_symbol,
-    };
-    onSave({
-      coin_id: coin.id,
-      coin_name: coin.name,
-      coin_symbol: coin.symbol,
-      quantity: parseFloat(quantity),
-    });
-  };
-
-  return (
-    <form
-      onSubmit={handleSubmit}
-      className="mt-3 pt-3 border-t border-border space-y-3"
-    >
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <Label className="text-xs">Moeda</Label>
-          <select
-            value={coinId}
-            onChange={(e) => setCoinId(e.target.value)}
-            className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
-          >
-            {POPULAR_COINS.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name} ({c.symbol})
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Quantidade</Label>
-          <Input
-            type="number"
-            step="any"
-            value={quantity}
-            onChange={(e) => setQuantity(e.target.value)}
-            required
-            className="h-9"
-          />
-        </div>
-      </div>
-      <div className="flex gap-2">
-        <Button type="submit" size="sm" disabled={isPending}>
-          <Check className="w-3.5 h-3.5 mr-1" />
-          {isPending ? "Salvando..." : "Salvar"}
-        </Button>
-        <Button type="button" size="sm" variant="outline" onClick={onCancel}>
-          Cancelar
-        </Button>
-      </div>
-    </form>
-  );
-}
-
 export default function Crypto() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ coin_id: "bitcoin", quantity: "" });
   const [prices, setPrices] = useState({});
   const [loadingPrices, setLoadingPrices] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [editingValue, setEditingValue] = useState("");
   const queryClient = useQueryClient();
 
-  // Busca holdings do seu backend Neon
+  // 1. BUSCAR (Rota corrigida para /crypto-holdings)
   const { data: holdings = [], isLoading } = useQuery({
     queryKey: ["crypto"],
     queryFn: async () => {
-      const response = await api.get("/crypto");
+      const response = await api.get("/crypto-holdings");
       return response.data;
     },
   });
 
+  // 2. CRIAR/UPSERT (Enviando symbol e amount como no seu server.js)
   const createMutation = useMutation({
-    mutationFn: (data) => api.post("/crypto", data),
+    mutationFn: (data) => api.post("/crypto-holdings", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["crypto"] });
       setShowForm(false);
@@ -132,23 +71,27 @@ export default function Crypto() {
     },
   });
 
-  const updateMutation = useMutation({
-    mutationFn: ({ id, data }) => api.put(`/crypto/${id}`, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["crypto"] });
-      setEditingId(null);
-    },
-  });
-
+  // 3. DELETAR
   const deleteMutation = useMutation({
-    mutationFn: (id) => api.delete(`/crypto/${id}`),
+    mutationFn: (id) => api.delete(`/crypto-holdings/${id}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["crypto"] }),
   });
 
+  // Função para buscar preços baseada nos símbolos que vêm do banco
   const loadPrices = async () => {
     if (!holdings.length) return;
     setLoadingPrices(true);
-    const ids = [...new Set(holdings.map((h) => h.coin_id))];
+
+    // Converte os símbolos do seu banco (BTC) nos IDs da API (bitcoin)
+    const ids = holdings
+      .map((h) => {
+        const found = POPULAR_COINS.find(
+          (c) => c.symbol === h.symbol.toUpperCase(),
+        );
+        return found ? found.id : null;
+      })
+      .filter((id) => id !== null);
+
     const data = await fetchPrices(ids);
     setPrices(data);
     setLoadingPrices(false);
@@ -161,26 +104,28 @@ export default function Crypto() {
   const handleAdd = (e) => {
     e.preventDefault();
     const coin = POPULAR_COINS.find((c) => c.id === form.coin_id);
-    const existing = holdings.find((h) => h.coin_id === coin.id);
 
-    if (existing) {
-      updateMutation.mutate({
-        id: existing.id,
-        data: { quantity: existing.quantity + parseFloat(form.quantity) },
-      });
-    } else {
-      createMutation.mutate({
-        coin_id: coin.id,
-        coin_name: coin.name,
-        coin_symbol: coin.symbol,
-        quantity: parseFloat(form.quantity),
-      });
-    }
+    // Seu backend espera { symbol, amount }
+    createMutation.mutate({
+      symbol: coin.symbol,
+      amount: parseFloat(form.quantity),
+    });
+  };
+
+  const handleUpdate = (h) => {
+    createMutation.mutate({
+      symbol: h.symbol,
+      amount: parseFloat(editingValue),
+    });
+    setEditingId(null);
   };
 
   const totalPortfolio = holdings.reduce((sum, h) => {
-    const price = prices[h.coin_id]?.brl || 0;
-    return sum + h.quantity * price;
+    const coinRef = POPULAR_COINS.find(
+      (c) => c.symbol === h.symbol.toUpperCase(),
+    );
+    const price = prices[coinRef?.id]?.brl || 0;
+    return sum + parseFloat(h.amount) * price;
   }, 0);
 
   return (
@@ -189,7 +134,7 @@ export default function Crypto() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Criptomoedas</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Acompanhe sua carteira em tempo real
+            Sincronizado com Neon.tech
           </p>
         </div>
         <div className="flex gap-2">
@@ -201,27 +146,23 @@ export default function Crypto() {
             <RefreshCw
               className={`w-4 h-4 mr-2 ${loadingPrices ? "animate-spin" : ""}`}
             />
-            Atualizar Preços
+            Atualizar
           </Button>
           <Button onClick={() => setShowForm(!showForm)}>
-            <Plus className="w-4 h-4 mr-2" />
-            Adicionar
+            <Plus className="w-4 h-4 mr-2" /> Novo
           </Button>
         </div>
       </div>
 
-      <div className="bg-card rounded-2xl border border-border p-6 shadow-sm">
-        <p className="text-sm text-muted-foreground font-medium uppercase tracking-wider mb-1">
-          Total da Carteira
+      <div className="bg-card rounded-2xl border p-6 shadow-sm">
+        <p className="text-sm text-muted-foreground font-medium uppercase">
+          Total Estimado
         </p>
-        <p className="text-3xl font-bold text-foreground">
-          {formatCurrency(totalPortfolio)}
-        </p>
+        <p className="text-3xl font-bold">{formatCurrency(totalPortfolio)}</p>
       </div>
 
       {showForm && (
-        <div className="bg-card rounded-2xl border border-border p-6 shadow-sm space-y-4 animate-in fade-in zoom-in duration-200">
-          <h3 className="font-semibold">Nova Criptomoeda</h3>
+        <div className="bg-card rounded-2xl border p-6 shadow-sm animate-in fade-in slide-in-from-top-2">
           <form
             onSubmit={handleAdd}
             className="flex flex-col sm:flex-row gap-4"
@@ -241,132 +182,82 @@ export default function Crypto() {
               </select>
             </div>
             <div className="flex-1 space-y-2">
-              <div className="flex items-center gap-1.5">
-                <Label>Quantidade</Label>
-                <Link
-                  to="/calculadoras"
-                  className="text-muted-foreground hover:text-primary"
-                >
-                  <HelpCircle className="w-3.5 h-3.5" />
-                </Link>
-              </div>
+              <Label>Quantidade</Label>
               <Input
                 type="number"
                 step="any"
-                placeholder="0.00"
                 value={form.quantity}
                 onChange={(e) => setForm({ ...form, quantity: e.target.value })}
                 required
               />
             </div>
-            <div className="flex items-end gap-2">
-              <Button type="submit" disabled={createMutation.isPending}>
-                {createMutation.isPending && (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                )}
-                Salvar
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setShowForm(false)}
-              >
-                Cancelar
-              </Button>
-            </div>
+            <Button
+              type="submit"
+              className="mt-auto"
+              disabled={createMutation.isPending}
+            >
+              {createMutation.isPending ? "Salvando..." : "Adicionar"}
+            </Button>
           </form>
         </div>
       )}
 
-      {isLoading ? (
-        <div className="space-y-3">
-          {[...Array(3)].map((_, i) => (
-            <Skeleton key={i} className="h-24 rounded-2xl w-full" />
-          ))}
-        </div>
-      ) : (
-        <div className="grid gap-4">
-          {holdings.map((h) => {
-            const priceData = prices[h.coin_id];
+      <div className="grid gap-4">
+        {isLoading ? (
+          <Skeleton className="h-24 w-full rounded-2xl" />
+        ) : (
+          holdings.map((h) => {
+            const coinRef = POPULAR_COINS.find(
+              (c) => c.symbol === h.symbol.toUpperCase(),
+            );
+            const priceData = prices[coinRef?.id];
             const price = priceData?.brl || 0;
             const change = priceData?.brl_24h_change || 0;
-            const total = h.quantity * price;
             const isEditing = editingId === h.id;
 
             return (
               <div
                 key={h.id}
-                className="bg-card rounded-2xl border border-border p-5 shadow-sm"
+                className="bg-card rounded-2xl border p-5 shadow-sm"
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center font-bold text-primary text-xs">
-                      {h.coin_symbol}
+                    <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center font-bold text-primary">
+                      {h.symbol}
                     </div>
                     <div>
-                      <h4 className="font-bold">{h.coin_name}</h4>
-                      <p className="text-sm text-muted-foreground">
-                        {h.quantity} {h.coin_symbol}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setEditingId(isEditing ? null : h.id)}
-                    >
+                      <h4 className="font-bold">{coinRef?.name || h.symbol}</h4>
                       {isEditing ? (
-                        <X className="w-4 h-4" />
+                        <div className="flex gap-2 mt-1">
+                          <Input
+                            className="h-7 w-24"
+                            type="number"
+                            value={editingValue}
+                            onChange={(e) => setEditingValue(e.target.value)}
+                          />
+                          <Button
+                            size="sm"
+                            className="h-7 px-2"
+                            onClick={() => handleUpdate(h)}
+                          >
+                            OK
+                          </Button>
+                        </div>
                       ) : (
-                        <Pencil className="w-4 h-4" />
+                        <p className="text-sm text-muted-foreground">
+                          {h.amount} {h.symbol}
+                        </p>
                       )}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="text-muted-foreground hover:text-destructive"
-                      onClick={() =>
-                        confirm("Excluir holding?") &&
-                        deleteMutation.mutate(h.id)
-                      }
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                    </div>
                   </div>
-                </div>
 
-                {isEditing ? (
-                  <EditHoldingForm
-                    holding={h}
-                    isPending={updateMutation.isPending}
-                    onSave={(data) => updateMutation.mutate({ id: h.id, data })}
-                    onCancel={() => setEditingId(null)}
-                  />
-                ) : (
-                  <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t border-border">
-                    <div>
-                      <p className="text-[10px] uppercase font-bold text-muted-foreground">
-                        Preço Atual
+                  <div className="flex items-center gap-2">
+                    <div className="text-right mr-4">
+                      <p className="font-bold">
+                        {formatCurrency(parseFloat(h.amount) * price)}
                       </p>
-                      <p className="font-semibold text-sm">
-                        {price ? formatCurrency(price) : "---"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] uppercase font-bold text-muted-foreground">
-                        Valor Total
-                      </p>
-                      <p className="font-bold text-sm text-primary">
-                        {price ? formatCurrency(total) : "---"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] uppercase font-bold text-muted-foreground">
-                        24h Change
-                      </p>
-                      <div
-                        className={`flex items-center text-sm font-bold ${change >= 0 ? "text-emerald-500" : "text-rose-500"}`}
+                      <p
+                        className={`text-xs flex items-center justify-end ${change >= 0 ? "text-emerald-500" : "text-rose-500"}`}
                       >
                         {change >= 0 ? (
                           <TrendingUp className="w-3 h-3 mr-1" />
@@ -374,15 +265,32 @@ export default function Crypto() {
                           <TrendingDown className="w-3 h-3 mr-1" />
                         )}
                         {Math.abs(change).toFixed(2)}%
-                      </div>
+                      </p>
                     </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => {
+                        setEditingId(h.id);
+                        setEditingValue(h.amount);
+                      }}
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => deleteMutation.mutate(h.id)}
+                    >
+                      <Trash2 className="w-4 h-4 text-destructive" />
+                    </Button>
                   </div>
-                )}
+                </div>
               </div>
             );
-          })}
-        </div>
-      )}
+          })
+        )}
+      </div>
     </div>
   );
 }
