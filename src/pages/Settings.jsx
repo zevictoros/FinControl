@@ -8,7 +8,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { CheckCircle2, Loader2 } from "lucide-react"; // Adicionado Loader2 conforme seu anterior
 import CategoryManager from "@/components/settings/CategoryManager";
 import { useAuth } from "@/lib/AuthContext"; // Reintegrado do seu anterior
-import UserManagement from "@/components/settings/UserManagement"; // Reintegrado do seu anterior
 
 // Lógica de LocalStorage para o alerta de cripto mantida conforme seu atual
 const APP_SETTINGS_KEY = "fincontrol_app_settings";
@@ -142,13 +141,6 @@ export default function Settings() {
         <h3 className="font-semibold text-base mb-5">Categorias</h3>
         <CategoryManager />
       </div>
-
-      {/* Gerenciamento de Usuários (Restaurado para Admins conforme seu anterior) */}
-      {isAdmin && (
-        <div className="pt-4 border-t border-border">
-          <UserManagement />
-        </div>
-      )}
     </div>
   );
 }
