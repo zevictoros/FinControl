@@ -1,30 +1,50 @@
 import React, { useState } from "react";
-import { api } from "@/api/apiClient"; // Conexão com seu backend Neon
+import { api } from "@/api/apiClient";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { CheckCircle2, Loader2 } from "lucide-react";
+import { CheckCircle2, Loader2 } from "lucide-react"; // Adicionado Loader2 conforme seu anterior
 import CategoryManager from "@/components/settings/CategoryManager";
-import UserManagement from "@/components/settings/UserManagement";
-import { useAuth } from "@/lib/AuthContext";
+import { useAuth } from "@/lib/AuthContext"; // Reintegrado do seu anterior
+import UserManagement from "@/components/settings/UserManagement"; // Reintegrado do seu anterior
+
+// Lógica de LocalStorage para o alerta de cripto mantida conforme seu atual
+const APP_SETTINGS_KEY = "fincontrol_app_settings";
+function loadAppSettings() {
+  try {
+    return JSON.parse(localStorage.getItem(APP_SETTINGS_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+function saveAppSettings(data) {
+  localStorage.setItem(
+    APP_SETTINGS_KEY,
+    JSON.stringify({ ...loadAppSettings(), ...data }),
+  );
+}
 
 export default function Settings() {
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const { user } = useAuth(); // Recuperando usuário para verificar admin
   const [saved, setSaved] = useState(false);
+  const [cryptoAlertPct, setCryptoAlertPct] = useState(
+    () => loadAppSettings().crypto_alert_pct ?? 5,
+  );
 
-  // Busca as configurações unificadas do banco de dados
+  // 1. Busca configurações (Neon/Render)
   const { data: settings, isLoading } = useQuery({
     queryKey: ["userSettings"],
     queryFn: async () => {
       const response = await api.get("/settings");
-      return response.data; // Esperado: { carry_balance: bool, crypto_alert_pct: number }
+      // Note: No seu backend Neon, settings costuma vir como objeto direto, não lista
+      return response.data;
     },
   });
 
-  // Mutação única para atualizar qualquer campo de configuração
+  // 2. Mutação unificada conforme seu código anterior (Neon usa POST para salvar/atualizar)
   const saveMutation = useMutation({
     mutationFn: (data) => api.post("/settings", data),
     onSuccess: () => {
@@ -38,7 +58,7 @@ export default function Settings() {
     setTimeout(() => setSaved(false), 2000);
   };
 
-  const handleUpdate = (field, value) => {
+  const handleToggle = (field, value) => {
     saveMutation.mutate({ [field]: value });
   };
 
@@ -54,13 +74,12 @@ export default function Settings() {
           </p>
         </div>
 
-        {/* Indicador de Status */}
-        <div className="h-6 flex items-center">
+        <div className="h-6 flex items-center gap-3">
           {saveMutation.isPending && (
             <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
           )}
           {saved && !saveMutation.isPending && (
-            <div className="flex items-center gap-2 text-emerald-500 text-sm font-medium animate-in fade-in slide-in-from-right-2 duration-300">
+            <div className="flex items-center gap-2 text-emerald-500 text-sm font-medium animate-in fade-in duration-300">
               <CheckCircle2 className="w-4 h-4" />
               Salvo!
             </div>
@@ -68,19 +87,16 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* Seção de Preferências Gerais */}
+      {/* Preferências gerais */}
       <div className="bg-card rounded-2xl border border-border p-6 shadow-sm space-y-6">
         <h3 className="font-semibold text-base">Preferências</h3>
 
-        {/* Toggle: Transportar Saldo */}
         <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1">
-            <p className="font-medium text-slate-800">
-              Transportar saldo para o próximo mês
-            </p>
-            <p className="text-sm text-muted-foreground leading-relaxed max-w-md">
-              Quando ativado, o saldo líquido do mês anterior será somado
-              automaticamente ao dashboard do mês atual.
+          <div>
+            <p className="font-medium">Transportar saldo para o próximo mês</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Quando ativado, o saldo líquido do mês anterior será somado às
+              receitas do mês seguinte no dashboard.
             </p>
           </div>
           {isLoading ? (
@@ -88,49 +104,46 @@ export default function Settings() {
           ) : (
             <Switch
               checked={settings?.carry_balance || false}
-              onCheckedChange={(v) => handleUpdate("carry_balance", v)}
+              onCheckedChange={(v) => handleToggle("carry_balance", v)}
               disabled={saveMutation.isPending}
             />
           )}
         </div>
 
         <div className="border-t border-border pt-5 flex items-start justify-between gap-4">
-          <div className="space-y-1">
-            <p className="font-medium text-slate-800">
-              Alerta de variação de cripto
-            </p>
-            <p className="text-sm text-muted-foreground leading-relaxed max-w-md">
-              Define o percentual de variação (24h) para disparar insights no
-              dashboard.
+          <div>
+            <p className="font-medium">Alerta de variação de cripto</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Gera um insight no dashboard quando uma criptomoeda variar mais
+              que esse percentual em 24h.
             </p>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-1.5 flex-shrink-0">
             <Input
               type="number"
               min="1"
               max="100"
-              value={settings?.crypto_alert_pct ?? 5}
+              step="1"
+              value={cryptoAlertPct}
               onChange={(e) => {
-                const val = parseInt(e.target.value);
-                if (!isNaN(val)) handleUpdate("crypto_alert_pct", val);
+                const v = parseFloat(e.target.value) || 5;
+                setCryptoAlertPct(v);
+                saveAppSettings({ crypto_alert_pct: v });
               }}
-              className="w-20 text-right h-9"
-              disabled={isLoading || saveMutation.isPending}
+              className="w-20 text-right"
             />
             <span className="text-sm text-muted-foreground font-medium">%</span>
           </div>
         </div>
       </div>
 
-      {/* Gerenciamento de Categorias */}
+      {/* Gerenciamento de categorias (Mantido conforme seu código atual) */}
       <div className="bg-card rounded-2xl border border-border p-6 shadow-sm">
-        <h3 className="font-semibold text-base mb-5">
-          Categorias Personalizadas
-        </h3>
+        <h3 className="font-semibold text-base mb-5">Categorias</h3>
         <CategoryManager />
       </div>
 
-      {/* Gerenciamento de Usuários (Somente Admin) */}
+      {/* Gerenciamento de Usuários (Restaurado para Admins conforme seu anterior) */}
       {isAdmin && (
         <div className="pt-4 border-t border-border">
           <UserManagement />

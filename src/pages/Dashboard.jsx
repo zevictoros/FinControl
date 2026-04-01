@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useEffect } from "react";
-import { api } from "@/api/apiClient"; // Trocado para sua nova API
+import React, { useState, useMemo } from "react";
+import { api } from "@/api/apiClient";
 import { useQuery } from "@tanstack/react-query";
 import StatsCards from "@/components/dashboard/StatsCards";
 import CategoryPieChart from "@/components/dashboard/CategoryPieChart";
@@ -10,24 +10,14 @@ import MonthSelector from "@/components/dashboard/MonthSelector";
 import Insights from "@/components/dashboard/Insights";
 import { Skeleton } from "@/components/ui/skeleton";
 
-// Função auxiliar para garantir que o valor seja um número válido
-const parseNumber = (val) => {
-  const n = parseFloat(val);
-  return isNaN(n) ? 0 : n;
-};
-
+// Função para buscar preços de Cripto (Igual ao seu antigo)
 async function fetchCryptoPrices(coinIds) {
   if (!coinIds.length) return {};
-  try {
-    const ids = coinIds.join(",");
-    const res = await fetch(
-      `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=brl&include_24hr_change=true`,
-    );
-    return await res.json();
-  } catch (err) {
-    console.error("Erro Crypto API:", err);
-    return {};
-  }
+  const ids = coinIds.join(",");
+  const res = await fetch(
+    `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=brl&include_24hr_change=true`,
+  );
+  return res.json();
 }
 
 export default function Dashboard() {
@@ -35,63 +25,69 @@ export default function Dashboard() {
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
 
-  // 1. BUSCAR TRANSAÇÕES (Rota do seu server.js)
+  // 1. Busca todas as transações (Neon/Render)
   const { data: allTransactions = [], isLoading: loadingTx } = useQuery({
     queryKey: ["transactions"],
     queryFn: async () => {
       const response = await api.get("/transactions");
-      return response.data || [];
+      return Array.isArray(response.data) ? response.data : [];
     },
   });
 
-  // 2. BUSCAR CONFIGURAÇÕES
-  const { data: settings = null, isLoading: loadingSettings } = useQuery({
+  // 2. Busca configurações do usuário
+  const { data: settings, isLoading: loadingSettings } = useQuery({
     queryKey: ["userSettings"],
     queryFn: async () => {
-      const response = await api.get("/settings");
-      return response.data || { carry_balance: false };
+      try {
+        const response = await api.get("/settings");
+        return response.data || { carry_balance: false };
+      } catch {
+        return { carry_balance: false };
+      }
     },
   });
 
-  // 3. BUSCAR CRIPTO (Rota corrigida para bater com o server.js)
+  // 3. Busca Cripto Holdings
   const { data: cryptoHoldings = [] } = useQuery({
     queryKey: ["crypto"],
     queryFn: async () => {
       const response = await api.get("/crypto-holdings");
-      return response.data || [];
+      return Array.isArray(response.data) ? response.data : [];
     },
   });
 
-  // Mapeamento de IDs para a API de preços (ajustado para os campos do seu novo banco)
-  const coinIdsForPrices = useMemo(() => {
-    // Se o seu banco salvar como 'BTC', precisamos converter para 'bitcoin' para a API funcionar
-    // Aqui assumimos que você está usando os IDs compatíveis ou uma lista de referência
-    return [
-      ...new Set(
-        cryptoHoldings.map((h) => h.coin_id || h.symbol?.toLowerCase()),
-      ),
-    ].filter(Boolean);
-  }, [cryptoHoldings]);
-
+  // 4. Busca Preços de Cripto (Igual ao seu antigo, mas usando dados da nova API)
   const { data: cryptoPrices = {} } = useQuery({
-    queryKey: ["cryptoPrices", coinIdsForPrices.join(",")],
-    queryFn: () => fetchCryptoPrices(coinIdsForPrices),
-    enabled: coinIdsForPrices.length > 0,
+    queryKey: [
+      "cryptoPrices",
+      cryptoHoldings.map((h) => h.coin_id || h.symbol).join(","),
+    ],
+    queryFn: () => {
+      // Mapeia os IDs para a Coingecko (Garante IDs únicos e válidos)
+      const ids = [
+        ...new Set(
+          cryptoHoldings.map((h) => h.coin_id || h.symbol?.toLowerCase()),
+        ),
+      ];
+      return fetchCryptoPrices(ids);
+    },
+    enabled: cryptoHoldings.length > 0,
     staleTime: 5 * 60 * 1000,
   });
 
   const isLoading = loadingTx || loadingSettings;
 
-  // Filtragem de transações do mês selecionado
+  // 5. Filtra transações do mês selecionado
   const monthTransactions = useMemo(() => {
     return allTransactions.filter((t) => {
       if (!t.date) return false;
-      const d = new Date(t.date + "T12:00:00");
-      return d.getMonth() === month && d.getFullYear() === year;
+      const datePart = t.date.split("T")[0];
+      const [y, m] = datePart.split("-");
+      return parseInt(m) - 1 === month && parseInt(y) === year;
     });
   }, [allTransactions, month, year]);
 
-  // Saldo do mês anterior (Carry Balance)
+  // 6. Lógica de Saldo Anterior (Carry Over)
   const prevMonthBalance = useMemo(() => {
     if (!settings?.carry_balance) return 0;
 
@@ -101,44 +97,42 @@ export default function Dashboard() {
 
     const prevTx = allTransactions.filter((t) => {
       if (!t.date) return false;
-      const d = new Date(t.date + "T12:00:00");
-      return d.getMonth() === prevM && d.getFullYear() === prevY;
+      const datePart = t.date.split("T")[0];
+      const [y, m] = datePart.split("-");
+      return parseInt(m) - 1 === prevM && parseInt(y) === prevY;
     });
 
-    const r = prevTx
-      .filter((t) => t.type === "receita")
-      .reduce((s, t) => s + parseNumber(t.amount), 0);
-    const d = prevTx
-      .filter((t) => t.type === "despesa")
-      .reduce((s, t) => s + parseNumber(t.amount), 0);
-    const inv = prevTx
-      .filter((t) => t.type === "investimento")
-      .reduce((s, t) => s + parseNumber(t.amount), 0);
+    const calculateSum = (type) =>
+      prevTx
+        .filter((t) => t.type === type)
+        .reduce((s, t) => s + (Number(t.amount) || 0), 0);
 
-    const balance = r - d - inv;
+    const balance =
+      calculateSum("receita") -
+      calculateSum("despesa") -
+      calculateSum("investimento");
+
     return balance > 0 ? balance : 0;
   }, [allTransactions, month, year, settings]);
 
-  // Estatísticas principais (Protegidas contra NaN)
+  // 7. Cálculos de Estatísticas para os Cards
   const stats = useMemo(() => {
-    const receitas =
+    const calculateSum = (type) =>
       monthTransactions
-        .filter((t) => t.type === "receita")
-        .reduce((sum, t) => sum + parseNumber(t.amount), 0) + prevMonthBalance;
+        .filter((t) => t.type === type)
+        .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
-    const despesas = monthTransactions
-      .filter((t) => t.type === "despesa")
-      .reduce((sum, t) => sum + parseNumber(t.amount), 0);
+    const receitasNoMes = calculateSum("receita");
+    const despesas = calculateSum("despesa");
+    const investimentos = calculateSum("investimento");
 
-    const investimentos = monthTransactions
-      .filter((t) => t.type === "investimento")
-      .reduce((sum, t) => sum + parseNumber(t.amount), 0);
+    const receitasTotais = receitasNoMes + prevMonthBalance;
 
     return {
-      receitas,
+      receitas: receitasTotais,
       despesas,
       investimentos,
-      saldo: receitas - despesas - investimentos,
+      saldo: receitasTotais - despesas - investimentos,
     };
   }, [monthTransactions, prevMonthBalance]);
 
@@ -164,7 +158,7 @@ export default function Dashboard() {
         <div className="text-center sm:text-left">
           <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Conectado ao FinControl API
+            Visão geral das suas finanças
           </p>
         </div>
         <div className="flex justify-center sm:justify-end">
@@ -179,26 +173,22 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Cards de Resumo */}
       <StatsCards data={stats} />
 
-      {/* Gráficos de Pizza */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <CategoryPieChart transactions={monthTransactions} />
         <IncomePieChart transactions={monthTransactions} />
       </div>
 
-      {/* Gráfico de Barras Anual */}
       <MonthlyBarChart transactions={allTransactions} />
 
-      {/* Insights (IA e Cripto) */}
+      {/* Reintegrado: Insights (Conforme seu antigo) */}
       <Insights
         transactions={allTransactions}
         cryptoHoldings={cryptoHoldings}
         cryptoPrices={cryptoPrices}
       />
 
-      {/* Tabela de Transações Recentes */}
       <RecentTransactions transactions={monthTransactions} />
     </div>
   );

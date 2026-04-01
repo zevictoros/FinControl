@@ -1,47 +1,68 @@
 import React, { createContext, useState, useContext, useEffect } from "react";
+import { api } from "@/api/apiClient"; // Importa o axios que configuramos
 
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-  // Definimos um usuário padrão para que o sistema nunca quebre
-  const [user, setUser] = useState({
-    id: "admin-01",
-    full_name: "Administrador FinControl",
-    email: "admin@fincontrol.com",
-    role: "admin",
-  });
-
-  // Como o login foi removido, o estado é sempre autenticado
-  const [isAuthenticated, setIsAuthenticated] = useState(true);
-  const [isLoadingAuth, setIsLoadingAuth] = useState(false);
-  const [isLoadingPublicSettings, setIsLoadingPublicSettings] = useState(false);
+  const [user, setUser] = useState(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [authError, setAuthError] = useState(null);
 
-  // Mock de configurações públicas (caso algum componente ainda peça)
-  const [appPublicSettings, setAppPublicSettings] = useState({
-    id: "fincontrol",
-    name: "FinControl",
-    public_settings: {},
-  });
-
-  const checkAppState = async () => {
-    // Apenas silenciamos a função, pois não há mais o que validar no servidor
-    setIsLoadingAuth(false);
-  };
+  useEffect(() => {
+    checkUserAuth();
+  }, []);
 
   const checkUserAuth = async () => {
-    setIsAuthenticated(true);
+    try {
+      setIsLoadingAuth(true);
+      setAuthError(null);
+
+      // Verificamos se existe um token salvo localmente
+      const token = localStorage.getItem("fin_access_token");
+
+      if (!token) {
+        setIsAuthenticated(false);
+        setIsLoadingAuth(false);
+        return;
+      }
+
+      // Chamada para o SEU servidor (Render) para validar o token/pegar usuário
+      // Se você ainda não criou a rota /me, ele cairá no catch, o que é seguro.
+      const response = await api.get("/auth/me");
+
+      setUser(response.data);
+      setIsAuthenticated(true);
+    } catch (error) {
+      console.error("Falha na autenticação:", error);
+
+      // Se der erro 401 ou 403, o token é inválido
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        logout(false); // Limpa os dados sem redirecionar em loop
+      }
+
+      setIsAuthenticated(false);
+    } finally {
+      setIsLoadingAuth(false);
+    }
   };
 
-  const logout = () => {
-    // No modo "sem login", o logout apenas recarrega a página ou limpa caches locais
-    console.log("Logout chamado no modo local.");
-    window.location.href = "/";
+  const logout = (shouldRedirect = true) => {
+    // 1. Limpa o estado
+    setUser(null);
+    setIsAuthenticated(false);
+
+    // 2. Remove o token do navegador
+    localStorage.removeItem("fin_access_token");
+
+    // 3. Redireciona para o login se necessário
+    if (shouldRedirect) {
+      window.location.href = "/login";
+    }
   };
 
   const navigateToLogin = () => {
-    // Redireciona para o início, já que não há tela de login
-    window.location.href = "/";
+    window.location.href = "/login";
   };
 
   return (
@@ -50,12 +71,9 @@ export const AuthProvider = ({ children }) => {
         user,
         isAuthenticated,
         isLoadingAuth,
-        isLoadingPublicSettings,
         authError,
-        appPublicSettings,
         logout,
         navigateToLogin,
-        checkAppState,
         checkUserAuth,
       }}
     >

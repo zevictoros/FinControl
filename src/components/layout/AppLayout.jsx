@@ -12,7 +12,6 @@ import {
   Target,
   Menu,
   X,
-  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/lib/ThemeContext";
@@ -21,9 +20,9 @@ const navItems = [
   { path: "/", label: "Dashboard", icon: LayoutDashboard },
   { path: "/transacoes", label: "Transações", icon: Receipt },
   { path: "/relatorios", label: "Relatórios", icon: BarChart2 },
-  { path: "/metas-categorias", label: "Metas por Categoria", icon: Target }, // Nova opção
-  { path: "/calculadoras", label: "Calculadoras", icon: Calculator }, // Nova opção
   { path: "/cripto", label: "Criptomoedas", icon: Bitcoin },
+  { path: "/metas-categorias", label: "Metas por Categoria", icon: Target },
+  { path: "/calculadoras", label: "Calculadoras", icon: Calculator },
   { path: "/configuracoes", label: "Configurações", icon: Settings },
 ];
 
@@ -52,9 +51,7 @@ export default function AppLayout() {
         {/* Logo */}
         <div className="flex items-center gap-3 px-5 h-16 border-b border-border flex-shrink-0">
           <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
-            <span className="text-primary-foreground font-bold text-sm">
-              FC
-            </span>
+            <span className="text-primary-foreground font-bold">₿</span>
           </div>
           <span className="text-lg font-bold tracking-tight text-foreground">
             FinControl
@@ -89,17 +86,6 @@ export default function AppLayout() {
             );
           })}
         </nav>
-
-        {/* Banner de Ajuda/Insights no Rodapé da Sidebar (Opcional) */}
-        <div className="px-4 py-4 m-3 rounded-xl bg-secondary/50 border border-border">
-          <div className="flex items-center gap-2 mb-2">
-            <Sparkles className="w-4 h-4 text-primary" />
-            <span className="text-xs font-semibold">Dica do dia</span>
-          </div>
-          <p className="text-[11px] text-muted-foreground leading-relaxed">
-            Confira suas metas por categoria para manter o orçamento em dia!
-          </p>
-        </div>
       </aside>
 
       {/* Main content */}
@@ -118,8 +104,8 @@ export default function AppLayout() {
           <div className="flex-1 flex items-center justify-center lg:justify-start">
             <div className="flex items-center gap-2 lg:hidden">
               <div className="w-6 h-6 rounded-md bg-primary flex items-center justify-center">
-                <span className="text-primary-foreground font-bold text-xs text-[10px]">
-                  FC
+                <span className="text-primary-foreground font-bold text-xs">
+                  ₿
                 </span>
               </div>
               <span className="font-bold text-foreground text-sm">
@@ -128,20 +114,18 @@ export default function AppLayout() {
             </div>
           </div>
 
-          {/* Theme toggle & Notifications */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={toggle}
-              className="flex-shrink-0 flex items-center justify-center w-9 h-9 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-              title={theme === "dark" ? "Modo claro" : "Modo escuro"}
-            >
-              {theme === "dark" ? (
-                <Sun className="w-4 h-4" />
-              ) : (
-                <Moon className="w-4 h-4" />
-              )}
-            </button>
-          </div>
+          {/* Theme toggle — always top right */}
+          <button
+            onClick={toggle}
+            className="flex-shrink-0 flex items-center justify-center w-9 h-9 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+            title={theme === "dark" ? "Modo claro" : "Modo escuro"}
+          >
+            {theme === "dark" ? (
+              <Sun className="w-4 h-4" />
+            ) : (
+              <Moon className="w-4 h-4" />
+            )}
+          </button>
         </header>
 
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-auto">

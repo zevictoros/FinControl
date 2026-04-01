@@ -1,18 +1,11 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { getExpenseCategories, INVESTMENT_CATEGORY } from "@/lib/categories";
+import { getExpenseCategories } from "@/lib/categories";
 import { Button } from "@/components/ui/button";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import { Save, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const STORAGE_KEY = "fincontrol_category_goals";
-
-const INVESTMENT_ITEM = {
-  key: "investimentos",
-  label: "Investimentos",
-  color: "#7c3aed",
-  isInvestment: true,
-};
 
 function loadGoals() {
   try {
@@ -40,17 +33,13 @@ export default function MetasCategorias() {
   const [catVersion, setCatVersion] = useState(0);
 
   const expenseCategories = useMemo(() => getExpenseCategories(), [catVersion]);
-
-  // Lista de categorias: despesas + investimento fixo no topo
   const categoryList = useMemo(
-    () => [
-      INVESTMENT_ITEM,
-      ...Object.entries(expenseCategories).map(([key, val]) => ({
+    () =>
+      Object.entries(expenseCategories).map(([key, val]) => ({
         key,
         label: val.label,
         color: val.color,
       })),
-    ],
     [expenseCategories],
   );
 
@@ -107,8 +96,7 @@ export default function MetasCategorias() {
             Metas por Categoria
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Defina qual % da receita vai para cada categoria (despesas +
-            investimentos)
+            Defina qual % do orçamento vai para cada categoria de despesa
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -130,12 +118,9 @@ export default function MetasCategorias() {
       </div>
 
       {isOver && (
-        <div className="flex items-center gap-2 bg-destructive/10 border border-destructive/20 rounded-xl px-4 py-2.5 text-sm text-destructive font-medium">
-          <span className="flex-shrink-0">⚠️</span>
-          <span>
-            Total de {totalGoalPercent.toFixed(1)}% ultrapassa 100%. Reduza os
-            valores antes de salvar.
-          </span>
+        <div className="bg-destructive/10 border border-destructive/20 rounded-xl p-3 text-sm text-destructive font-medium">
+          ⚠️ Total ({totalGoalPercent.toFixed(1)}%) ultrapassa 100%. Reduza
+          antes de salvar.
         </div>
       )}
 
@@ -253,11 +238,6 @@ export default function MetasCategorias() {
                   <span className="text-sm font-medium flex-1 truncate">
                     {c.label}
                   </span>
-                  {c.isInvestment && (
-                    <span className="text-xs bg-violet-500/10 text-violet-600 dark:text-violet-400 rounded px-1.5 py-0.5 font-medium flex-shrink-0">
-                      investimento
-                    </span>
-                  )}
                   <div className="flex items-center gap-1 bg-secondary rounded-lg px-3 py-1.5 border border-border w-24 flex-shrink-0">
                     <input
                       type="number"
