@@ -35,6 +35,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import InvestmentReport from "@/components/reports/InvestmentReport";
 import { api } from "@/api/apiClient";
 
+// Helper para evitar problemas de fuso horário na comparação de meses
+const getYearMonthKey = (dateString) => {
+  if (!dateString) return "";
+  const parts = dateString.split("T")[0].split("-");
+  return `${parts[0]}-${parseInt(parts[1]) - 1}`;
+};
+
 const CustomTooltip = ({ active, payload, label }) => {
   if (active && payload && payload.length) {
     return (
@@ -46,12 +53,7 @@ const CustomTooltip = ({ active, payload, label }) => {
         }}
         className="rounded-xl px-4 py-3 shadow-lg"
       >
-        <p
-          className="text-sm font-semibold mb-1"
-          style={{ color: "hsl(var(--foreground))" }}
-        >
-          {label}
-        </p>
+        <p className="text-sm font-semibold mb-1">{label}</p>
         {payload.map((p, i) => (
           <p key={i} className="text-sm" style={{ color: p.color }}>
             {p.name}: {formatCurrency(p.value)}
@@ -62,22 +64,6 @@ const CustomTooltip = ({ active, payload, label }) => {
   }
   return null;
 };
-
-function getPastMonths(n) {
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth();
-  const months = [];
-  for (let i = n - 1; i >= 0; i--) {
-    const d = new Date(currentYear, currentMonth - i, 1);
-    months.push({ year: d.getFullYear(), month: d.getMonth() });
-  }
-  return months;
-}
-
-function monthKey(year, month) {
-  return `${year}-${String(month + 1).padStart(2, "0")}`;
-}
 
 export default function Reports() {
   const now = new Date();
@@ -93,88 +79,66 @@ export default function Reports() {
   const [filterType, setFilterType] = useState("all");
   const [filterCategory, setFilterCategory] = useState("all");
 
-  // 1. Busca de dados corrigida para o seu novo backend
   const { data: allTransactions = [], isLoading } = useQuery({
     queryKey: ["transactions"],
     queryFn: async () => {
       const response = await api.get("/transactions");
-      // Garante que o retorno seja sempre um array para o .filter não quebrar
       return Array.isArray(response.data) ? response.data : [];
     },
   });
 
-  // 2. Lógica de meses válidos (Mantendo as novas funcionalidades de período customizado)
+  // Lógica de geração do período selecionado
   const validMonths = useMemo(() => {
-    const now = new Date();
-    const currentKey = (y, m) => y * 12 + m; // Função helper simples para comparar meses
-    const currentMonthKey = currentKey(now.getFullYear(), now.getMonth());
-
+    const monthsArr = [];
     if (periodMode === "preset") {
-      // Se for preset (ex: últimos 6 meses), usa a lógica do seu código antigo adaptada
-      const monthsArr = [];
       for (let i = 0; i < parseInt(presetMonths); i++) {
-        const d = new Date();
-        d.setMonth(now.getMonth() - i);
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
         monthsArr.push({ year: d.getFullYear(), month: d.getMonth() });
       }
-      return monthsArr;
     } else {
-      // Lógica para período customizado (Data Início -> Data Fim)
       const [sy, sm] = customStart.split("-").map(Number);
       const [ey, em] = customEnd.split("-").map(Number);
+      let currY = sy,
+        currM = sm - 1;
+      const endKey = ey * 12 + (em - 1);
 
-      const startKey = currentKey(sy, sm - 1);
-      const endKey = Math.min(currentKey(ey, em - 1), currentMonthKey);
-
-      const monthsArr = [];
-      let y = sy,
-        m = sm - 1;
-
-      while (currentKey(y, m) <= endKey) {
-        monthsArr.push({ year: y, month: m });
-        m++;
-        if (m > 11) {
-          m = 0;
-          y++;
+      while (currY * 12 + currM <= endKey) {
+        monthsArr.push({ year: currY, month: currM });
+        currM++;
+        if (currM > 11) {
+          currM = 0;
+          currY++;
         }
-        if (monthsArr.length > 120) break; // Trava de segurança
+        if (monthsArr.length > 120) break;
       }
-      return monthsArr;
     }
+    return monthsArr;
   }, [periodMode, presetMonths, customStart, customEnd]);
 
-  // Cria um Set de chaves (YYYY-MM) para busca rápida no filtro
-  const validMonthKeys = useMemo(() => {
-    return new Set(validMonths.map((v) => `${v.year}-${v.month}`));
-  }, [validMonths]);
+  const validMonthKeys = useMemo(
+    () => new Set(validMonths.map((v) => `${v.year}-${v.month}`)),
+    [validMonths],
+  );
 
-  // 3. Filtro Principal CORRIGIDO
+  // Filtro de Transações
   const filtered = useMemo(() => {
     return allTransactions.filter((t) => {
       if (!t.date) return false;
-
-      // CORREÇÃO CRÍTICA: Pegamos ano e mês via split para ignorar fuso horário do navegador
-      // t.date costuma vir "2024-03-15..." -> pegamos ["2024", "03"]
-      const dateParts = t.date.split("T")[0].split("-");
-      const year = parseInt(dateParts[0]);
-      const month = parseInt(dateParts[1]) - 1; // JS usa meses de 0 a 11
-
-      const key = `${year}-${month}`;
-
-      // Verificações
+      const key = getYearMonthKey(t.date);
       if (!validMonthKeys.has(key)) return false;
       if (filterType !== "all" && t.type !== filterType) return false;
       if (filterCategory !== "all" && t.category !== filterCategory)
         return false;
-
       return true;
     });
   }, [allTransactions, validMonthKeys, filterType, filterCategory]);
 
+  // Agrupamento para Gráficos Mensais
   const monthlyData = useMemo(() => {
     const map = {};
+    // Inicializa todos os meses do período com 0
     validMonths.forEach(({ year, month }) => {
-      const key = monthKey(year, month);
+      const key = `${year}-${month}`;
       map[key] = {
         label: new Date(year, month).toLocaleDateString("pt-BR", {
           month: "short",
@@ -183,19 +147,21 @@ export default function Reports() {
         receita: 0,
         despesa: 0,
         investimento: 0,
+        sortKey: year * 12 + month,
       };
     });
+
     filtered.forEach((t) => {
-      const d = new Date(t.date + "T12:00:00");
-      const key = monthKey(d.getFullYear(), d.getMonth());
-      if (!map[key]) return;
-      if (t.type === "receita") map[key].receita += t.amount;
-      else if (t.type === "despesa") map[key].despesa += t.amount;
-      else if (t.type === "investimento") map[key].investimento += t.amount;
+      const key = getYearMonthKey(t.date);
+      if (map[key]) {
+        if (t.type === "receita") map[key].receita += Number(t.amount);
+        else if (t.type === "despesa") map[key].despesa += Number(t.amount);
+        else if (t.type === "investimento")
+          map[key].investimento += Number(t.amount);
+      }
     });
-    return Object.entries(map)
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([, v]) => v);
+
+    return Object.values(map).sort((a, b) => a.sortKey - b.sortKey);
   }, [filtered, validMonths]);
 
   const allCategories = useMemo(() => getAllCategories(), []);
@@ -205,7 +171,7 @@ export default function Reports() {
     filtered
       .filter((t) => t.type === "despesa")
       .forEach((t) => {
-        map[t.category] = (map[t.category] || 0) + t.amount;
+        map[t.category] = (map[t.category] || 0) + Number(t.amount);
       });
     return Object.entries(map)
       .map(([key, value]) => ({
@@ -221,7 +187,7 @@ export default function Reports() {
     filtered
       .filter((t) => t.type === "receita")
       .forEach((t) => {
-        map[t.category] = (map[t.category] || 0) + t.amount;
+        map[t.category] = (map[t.category] || 0) + Number(t.amount);
       });
     return Object.entries(map)
       .map(([key, value]) => ({
@@ -236,13 +202,13 @@ export default function Reports() {
     () => ({
       receitas: filtered
         .filter((t) => t.type === "receita")
-        .reduce((s, t) => s + t.amount, 0),
+        .reduce((s, t) => s + Number(t.amount), 0),
       despesas: filtered
         .filter((t) => t.type === "despesa")
-        .reduce((s, t) => s + t.amount, 0),
+        .reduce((s, t) => s + Number(t.amount), 0),
       investimentos: filtered
         .filter((t) => t.type === "investimento")
-        .reduce((s, t) => s + t.amount, 0),
+        .reduce((s, t) => s + Number(t.amount), 0),
     }),
     [filtered],
   );
@@ -261,7 +227,7 @@ export default function Reports() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Relatórios</h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Analise suas finanças com filtros e gráficos dinâmicos
+          Analise suas finanças com filtros dinâmicos
         </p>
       </div>
 
@@ -272,6 +238,7 @@ export default function Reports() {
         </TabsList>
 
         <TabsContent value="transactions" className="space-y-6">
+          {/* Filtros */}
           <div className="bg-card rounded-2xl border border-border p-5 shadow-sm">
             <h3 className="font-semibold mb-4">Filtros</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -298,7 +265,6 @@ export default function Reports() {
                     <SelectContent>
                       <SelectItem value="3">Últimos 3 meses</SelectItem>
                       <SelectItem value="6">Últimos 6 meses</SelectItem>
-                      <SelectItem value="9">Últimos 9 meses</SelectItem>
                       <SelectItem value="12">Últimos 12 meses</SelectItem>
                     </SelectContent>
                   </Select>
@@ -318,7 +284,6 @@ export default function Reports() {
                     <Input
                       type="month"
                       value={customEnd}
-                      max={`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`}
                       onChange={(e) => setCustomEnd(e.target.value)}
                     />
                   </div>
@@ -357,12 +322,6 @@ export default function Reports() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Todas</SelectItem>
-                    {(filterType === "all" ||
-                      filterType === "investimento") && (
-                      <SelectItem value="investimentos">
-                        Investimentos
-                      </SelectItem>
-                    )}
                     {(filterType === "all" || filterType === "despesa") &&
                       Object.entries(getExpenseCategories()).map(([k, v]) => (
                         <SelectItem key={k} value={k}>
@@ -381,9 +340,10 @@ export default function Reports() {
             </div>
           </div>
 
+          {/* Cards de Totais */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-card rounded-2xl border border-border p-5 shadow-sm">
-              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">
+              <p className="text-xs text-muted-foreground uppercase mb-1">
                 Total Receitas
               </p>
               <p className="text-xl font-bold text-emerald-500">
@@ -391,7 +351,7 @@ export default function Reports() {
               </p>
             </div>
             <div className="bg-card rounded-2xl border border-border p-5 shadow-sm">
-              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">
+              <p className="text-xs text-muted-foreground uppercase mb-1">
                 Total Despesas
               </p>
               <p className="text-xl font-bold text-red-500">
@@ -399,7 +359,7 @@ export default function Reports() {
               </p>
             </div>
             <div className="bg-card rounded-2xl border border-border p-5 shadow-sm">
-              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">
+              <p className="text-xs text-muted-foreground uppercase mb-1">
                 Total Investimentos
               </p>
               <p className="text-xl font-bold text-violet-500">
@@ -408,127 +368,67 @@ export default function Reports() {
             </div>
           </div>
 
+          {/* Gráfico de Evolução */}
           <div className="bg-card rounded-2xl border border-border p-6 shadow-sm">
             <h3 className="font-semibold mb-4">Evolução Mensal</h3>
-            {monthlyData.length === 0 ? (
-              <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">
-                Nenhum dado neste período
-              </div>
-            ) : (
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={monthlyData} barGap={2}>
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      stroke="hsl(var(--border))"
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={monthlyData}>
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="hsl(var(--border))"
+                    vertical={false}
+                  />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                  <YAxis
+                    tick={{ fontSize: 11 }}
+                    tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`}
+                  />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend />
+                  {(filterType === "all" || filterType === "receita") && (
+                    <Bar
+                      dataKey="receita"
+                      name="Receitas"
+                      fill="#10b981"
+                      radius={[4, 4, 0, 0]}
                     />
-                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                    <YAxis
-                      tick={{ fontSize: 11 }}
-                      tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`}
+                  )}
+                  {(filterType === "all" || filterType === "despesa") && (
+                    <Bar
+                      dataKey="despesa"
+                      name="Despesas"
+                      fill="#ef4444"
+                      radius={[4, 4, 0, 0]}
                     />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Legend />
-                    {(filterType === "all" || filterType === "receita") && (
-                      <Bar
-                        dataKey="receita"
-                        name="Receitas"
-                        fill="#10b981"
-                        radius={[4, 4, 0, 0]}
-                      />
-                    )}
-                    {(filterType === "all" || filterType === "despesa") && (
-                      <Bar
-                        dataKey="despesa"
-                        name="Despesas"
-                        fill="#ef4444"
-                        radius={[4, 4, 0, 0]}
-                      />
-                    )}
-                    {(filterType === "all" ||
-                      filterType === "investimento") && (
-                      <Bar
-                        dataKey="investimento"
-                        name="Investimentos"
-                        fill="#7c3aed"
-                        radius={[4, 4, 0, 0]}
-                      />
-                    )}
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
+                  )}
+                  {(filterType === "all" || filterType === "investimento") && (
+                    <Bar
+                      dataKey="investimento"
+                      name="Investimentos"
+                      fill="#7c3aed"
+                      radius={[4, 4, 0, 0]}
+                    />
+                  )}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
 
-          {monthlyData.length > 1 && (
-            <div className="bg-card rounded-2xl border border-border p-6 shadow-sm">
-              <h3 className="font-semibold mb-4">Tendência</h3>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={monthlyData}>
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      stroke="hsl(var(--border))"
-                    />
-                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                    <YAxis
-                      tick={{ fontSize: 11 }}
-                      tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`}
-                    />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Legend />
-                    {(filterType === "all" || filterType === "receita") && (
-                      <Line
-                        type="monotone"
-                        dataKey="receita"
-                        name="Receitas"
-                        stroke="#10b981"
-                        strokeWidth={2}
-                        dot={false}
-                      />
-                    )}
-                    {(filterType === "all" || filterType === "despesa") && (
-                      <Line
-                        type="monotone"
-                        dataKey="despesa"
-                        name="Despesas"
-                        stroke="#ef4444"
-                        strokeWidth={2}
-                        dot={false}
-                      />
-                    )}
-                    {(filterType === "all" ||
-                      filterType === "investimento") && (
-                      <Line
-                        type="monotone"
-                        dataKey="investimento"
-                        name="Investimentos"
-                        stroke="#7c3aed"
-                        strokeWidth={2}
-                        dot={false}
-                      />
-                    )}
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          )}
-
+          {/* Gráficos de Pizza */}
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-            {(filterType === "all" || filterType === "despesa") &&
-              expenseCategoryData.length > 0 && (
-                <CategoryPieSection
-                  title="Despesas por Categoria"
-                  data={expenseCategoryData}
-                />
-              )}
-            {(filterType === "all" || filterType === "receita") &&
-              incomeCategoryData.length > 0 && (
-                <CategoryPieSection
-                  title="Receitas por Categoria"
-                  data={incomeCategoryData}
-                />
-              )}
+            {expenseCategoryData.length > 0 && (
+              <CategoryPieSection
+                title="Despesas por Categoria"
+                data={expenseCategoryData}
+              />
+            )}
+            {incomeCategoryData.length > 0 && (
+              <CategoryPieSection
+                title="Receitas por Categoria"
+                data={incomeCategoryData}
+              />
+            )}
           </div>
         </TabsContent>
 
@@ -552,7 +452,7 @@ function CategoryPieSection({ title, data }) {
                 data={data}
                 cx="50%"
                 cy="50%"
-                outerRadius={85}
+                outerRadius={80}
                 dataKey="value"
                 stroke="none"
               >
@@ -560,28 +460,18 @@ function CategoryPieSection({ title, data }) {
                   <Cell key={i} fill={e.color} />
                 ))}
               </Pie>
-              <Tooltip
-                formatter={(v) => formatCurrency(v)}
-                contentStyle={{
-                  backgroundColor: "hsl(var(--card))",
-                  border: "1px solid hsl(var(--border))",
-                  color: "hsl(var(--foreground))",
-                  borderRadius: 12,
-                }}
-              />
+              <Tooltip formatter={(v) => formatCurrency(v)} />
             </PieChart>
           </ResponsiveContainer>
         </div>
         <div className="space-y-2">
-          {data.map((item) => (
-            <div key={item.name} className="flex items-center gap-2 text-sm">
+          {data.slice(0, 5).map((item) => (
+            <div key={item.name} className="flex items-center gap-2 text-xs">
               <div
-                className="w-3 h-3 rounded-full flex-shrink-0"
+                className="w-2 h-2 rounded-full"
                 style={{ backgroundColor: item.color }}
               />
-              <span className="text-muted-foreground flex-1 truncate">
-                {item.name}
-              </span>
+              <span className="flex-1 truncate">{item.name}</span>
               <span className="font-medium">{formatCurrency(item.value)}</span>
             </div>
           ))}
