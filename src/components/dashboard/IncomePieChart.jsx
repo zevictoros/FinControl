@@ -3,12 +3,12 @@ import { getAllCategories, formatCurrency } from "@/lib/categories";
 
 const CustomTooltip = ({ active, payload }) => {
   if (active && payload && payload.length) {
-    const data = payload[0];
+    const data = payload[0].payload;
     return (
       <div className="bg-card border border-border rounded-xl px-4 py-2.5 shadow-lg">
         <p className="text-sm font-semibold text-foreground">{data.name}</p>
         <p className="text-sm text-muted-foreground">
-          {formatCurrency(data.value)}
+          {formatCurrency(Number(data.value) || 0)}
         </p>
       </div>
     );
@@ -16,21 +16,26 @@ const CustomTooltip = ({ active, payload }) => {
   return null;
 };
 
-export default function IncomePieChart({ transactions }) {
+export default function IncomePieChart({ transactions = [] }) {
   const CATEGORIES = getAllCategories();
-  const receitas = transactions.filter((t) => t.type === "receita");
 
-  const categoryTotals = {};
-  receitas.forEach((t) => {
-    categoryTotals[t.category] = (categoryTotals[t.category] || 0) + t.amount;
-  });
-
-  const chartData = Object.entries(categoryTotals)
+  // Agrupa receitas garantindo conversão numérica
+  const chartData = Object.entries(
+    transactions
+      .filter((t) => t.type === "receita")
+      .reduce((acc, t) => {
+        const cat = t.category || "outros";
+        const val = Number(t.amount) || 0; // Conversão para número
+        acc[cat] = (acc[cat] || 0) + val;
+        return acc;
+      }, {}),
+  )
     .map(([key, value]) => ({
       name: CATEGORIES[key]?.label || key,
       value,
       color: CATEGORIES[key]?.color || "#10b981",
     }))
+    .filter((item) => item.value > 0)
     .sort((a, b) => b.value - a.value);
 
   if (chartData.length === 0) {
@@ -61,18 +66,18 @@ export default function IncomePieChart({ transactions }) {
               stroke="none"
             >
               {chartData.map((entry, idx) => (
-                <Cell key={idx} fill={entry.color} />
+                <Cell key={`income-cell-${idx}`} fill={entry.color} />
               ))}
             </Pie>
             <Tooltip content={<CustomTooltip />} />
           </PieChart>
         </ResponsiveContainer>
       </div>
-      <div className="grid grid-cols-2 gap-2 mt-4">
+      <div className="grid grid-cols-2 gap-2 mt-4 max-h-32 overflow-y-auto pr-1">
         {chartData.map((item) => (
           <div key={item.name} className="flex items-center gap-2 text-sm">
             <div
-              className="w-3 h-3 rounded-full flex-shrink-0"
+              className="w-2.5 h-2.5 rounded-full flex-shrink-0"
               style={{ backgroundColor: item.color }}
             />
             <span className="text-muted-foreground truncate">{item.name}</span>
